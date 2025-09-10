@@ -1,0 +1,5 @@
+#git 경고 나오는 거 끄려고 있는 파일
+#줄 바꿈 windows랑 mac이 달라서 나오는 경고임 무시해도 됨
+*.tsx text eol=lf
+*.ts  text eol=lf
+*.js  text eol=lf
