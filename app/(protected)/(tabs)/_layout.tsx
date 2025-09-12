@@ -1,18 +1,16 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from "expo-router";
 
-
-
 export default function TabsLayout() {
-  
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: '#000000',//탭바 포커스 될 때 바뀌는 색깔
+        headerShown: false, // 각 탭의 헤더를 숨김
       }}
     >
       <Tabs.Screen 
-        name="index"      
+        name="(focus_zone)"      
         options={{
           title : '집중장소',
           tabBarIcon: ({ color, focused }) => (
@@ -30,7 +28,7 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="group_zone"
+        name="(group_zone)"
         options={{
           title : '그룹장소',
           tabBarIcon: ({ color, focused }) => (
@@ -39,7 +37,7 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen 
-        name="profile"    
+        name="(profile)"    
         options={{ 
           title : '프로필',
           tabBarIcon: ({ color, focused }) => (

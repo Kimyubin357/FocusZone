@@ -1,52 +1,68 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import React, { useContext, useEffect, useState } from 'react';
+import {
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { auth } from '../../firebaseConfig';
+import { AuthContext } from '../../src/services/auth/authContext';
 
 export default function EmailSignUp() {
   const router = useRouter();
+ 
+  const { logIn } = useContext(AuthContext);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isPasswordValid, setIsPasswordValid] = useState(false);
   const [isEmailValid, setIsEmailValid] = useState(false);
   const [isFormValid, setIsFormValid] = useState(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    // 비밀번호 유효성 검사
     const passwordValid = password.length >= 8;
     setIsPasswordValid(passwordValid);
-    
-    // 이메일 유효성 검사 (간단한 정규식 사용)
+
     const emailValid = /\S+@\S+\.\S+/.test(email);
     setIsEmailValid(emailValid);
 
-    // 전체 폼 유효성 검사
     setIsFormValid(passwordValid && emailValid);
   }, [email, password]);
 
   const getPasswordIndicatorColor = () => {
-    if (password.length === 0) {
-      return '#ccc'; // 기본 색상
-    }
+    if (password.length === 0) return '#ccc';
     return isPasswordValid ? 'green' : 'red';
   };
 
-  const handleContinue = () => {
-    if (isFormValid) {
-      // TODO: Implement sign-up logic
-      console.log('이메일: ', email);
-      console.log('비밀번호: ', password);
+  const handleContinue = async () => {
+    if (!isFormValid) return;
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      // 회원가입 성공하면 onAuthStateChanged가 감지해서 자동 라우팅됨
+      setErrorMessage(null);
+      logIn();
+    } catch (error: any) {
+      console.log(error);
+      setErrorMessage(error.message || "회원가입에 실패했습니다.");
     }
   };
-    
-  // 키보드 외부를 터치하면 키보드를 닫는 함수
+
   const handleDismissKeyboard = () => {
     Keyboard.dismiss();
   };
 
   return (
-    // TouchableWithoutFeedback으로 감싸서 배경 터치 시 키보드 닫기
     <TouchableWithoutFeedback onPress={handleDismissKeyboard} accessible={false}>
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
@@ -55,69 +71,70 @@ export default function EmailSignUp() {
           style={styles.keyboardAvoidingView}
         >
           <Text style={styles.title}>이메일로 가입</Text>
-        
+
           <View style={styles.inputContainer}>
             <View style={styles.inputWrapper}>
-              <Ionicons style={styles.icon} name='mail-outline' size={24} />
+              <Ionicons style={styles.icon} name="mail-outline" size={24} />
               <TextInput
                 style={styles.input}
                 placeholder="이메일"
-                placeholderTextColor={'grey'}
+                placeholderTextColor="grey"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={email}
                 onChangeText={setEmail}
               />
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Ionicons style={styles.icon} name="lock-closed-outline" size={24} />
+              <TextInput
+                style={styles.input}
+                placeholder="암호"
+                placeholderTextColor="grey"
+                secureTextEntry={!isPasswordVisible}
+                value={password}
+                onChangeText={setPassword}
+              />
+              <Text style={[styles.passwordIndicator, { color: getPasswordIndicatorColor() }]}>
+                {password.length}/8
+              </Text>
+              <TouchableOpacity
+                style={styles.passwordVisibilityToggle}
+                onPress={() => setIsPasswordVisible(!isPasswordVisible)}
+              >
+                <Ionicons name={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'} size={24} />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <View style={styles.inputWrapper}>
-            <Ionicons style={styles.icon} name='lock-closed-outline' size={24} />
-            <TextInput
-              style={styles.input}
-              placeholder="암호"
-              placeholderTextColor={'grey'}
-              secureTextEntry={!isPasswordVisible}
-              value={password}
-              onChangeText={setPassword}
-            />
-            <Text style={[styles.passwordIndicator, { color: getPasswordIndicatorColor() }]}>
-              {password.length}/8
+          {errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
+
+          <TouchableOpacity
+            style={styles.loginTextContainer}
+            onPress={() => router.push('/email_login')}
+          >
+            <Text style={styles.loginText}>
+              <Text style={styles.loginPrompt}>계정이 있으신가요? </Text>
+              <Text style={styles.loginLink}>로그인</Text>
             </Text>
+          </TouchableOpacity>
+
+          <View style={styles.buttonContainer}>
             <TouchableOpacity
-              style={styles.passwordVisibilityToggle}
-              onPress={() => setIsPasswordVisible(!isPasswordVisible)}
+              style={[styles.continueButton, { backgroundColor: isFormValid ? '#2196F3' : '#ccc' }]}
+              onPress={handleContinue}
+              disabled={!isFormValid}
+              activeOpacity={0.7}
             >
-              <Ionicons name={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'} size={24} /> 
+              <Text style={styles.continueButtonText}>계속하기</Text>
             </TouchableOpacity>
           </View>
-        </View>
-
-        <TouchableOpacity
-          style={styles.loginTextContainer}
-          onPress={() => router.push('/email_login')}
-        >
-          <Text style={styles.loginText}>
-            <Text style={styles.loginPrompt}>계정이 있으신가요? </Text>
-            <Text style={styles.loginLink}>로그인</Text>
-          </Text>
-        </TouchableOpacity>
-
-        
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[styles.continueButton, { backgroundColor: isFormValid ? '#2196F3' : '#ccc' }]}
-            onPress={handleContinue}
-            disabled={!isFormValid}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.continueButtonText}>계속하기</Text>
-          </TouchableOpacity>
-        </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </TouchableWithoutFeedback>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -166,6 +183,12 @@ const styles = StyleSheet.create({
   passwordVisibilityToggle: {
     padding: 5,
   },
+  errorText: {
+    color: 'red',
+    fontSize: 14,
+    marginVertical: 8,
+    textAlign: 'center',
+  },
   loginTextContainer: {
     marginTop: 20,
   },
@@ -200,5 +223,3 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-
-

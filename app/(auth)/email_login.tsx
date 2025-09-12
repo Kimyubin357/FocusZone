@@ -1,16 +1,22 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import React, { useContext, useEffect, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { auth } from '../../firebaseConfig';
+import { AuthContext } from '../../src/services/auth/authContext';
 
 export default function EmailLogin() {
     const router = useRouter();
+    const { logIn } = useContext(AuthContext);
+    
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [isPasswordValid, setIsPasswordValid] = useState(false);
     const [isEmailValid, setIsEmailValid] = useState(false);
     const [isFormValid, setIsFormValid] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     useEffect(() => {
         // 비밀번호 유효성 검사
@@ -25,13 +31,20 @@ export default function EmailLogin() {
         setIsFormValid(passwordValid && emailValid);
     }, [email, password]);
 
-    const handleContinue = () => {
-        if (isFormValid) {
-            // TODO: Implement sign-up logic
-            console.log('이메일: ', email);
-            console.log('비밀번호: ', password);
+    const handleContinue = async () => {
+        if (!isFormValid) return;
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+            // 회원가입 성공하면 onAuthStateChanged가 감지해서 자동 라우팅됨
+            setErrorMessage(null);
+            logIn();
+        } catch (error: any) {
+            console.log(error);
+            setErrorMessage(error.message || "회원가입에 실패했습니다.");
         }
     };
+           
+    
     
     // 키보드 외부를 터치하면 키보드를 닫는 함수
     const handleDismissKeyboard = () => {

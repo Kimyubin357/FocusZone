@@ -15,8 +15,13 @@ export default function AuthLayout() {
             
         />
         <Stack.Screen 
-            name="(email)" 
-            
+            name="email_login" 
+        />
+        <Stack.Screen 
+            name="email_signup" 
+        />
+        <Stack.Screen 
+            name="email_forget_pwd" 
         />
     </Stack>
   );

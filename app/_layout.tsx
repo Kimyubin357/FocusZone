@@ -1,5 +1,5 @@
 // app/_layout.tsx
-import { AuthProvider } from "@/utils/authContext";
+import { AuthProvider } from "@/src/services/auth/authContext";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React from "react";
