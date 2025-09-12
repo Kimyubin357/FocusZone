@@ -11,7 +11,7 @@ const KAKAO_MAP_HTML = `
       <style>
         html, body, #map { height: 100%; margin: 0; padding: 0; }
       </style>
-      <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_APP_KEY}"></script>
+      <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_APP_KEY}"></script>
     </head>
     <body>
       <div id="map" style="width:100%;height:100%;"></div>
