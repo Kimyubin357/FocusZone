@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import React, { useContext, useEffect, useState } from 'react';
 import {
+  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -53,8 +54,26 @@ export default function EmailSignUp() {
       setErrorMessage(null);
       logIn();
     } catch (error: any) {
-      console.log(error);
-      setErrorMessage(error.message || "회원가입에 실패했습니다.");
+      let errorMessage = "회원가입에 실패했습니다. 잠시 후 다시 시도해 주세요.";
+        
+        // ✅ Firebase 에러 코드를 이용해 맞춤형 메시지 설정
+        switch (error.code) {
+            case 'auth/email-already-in-use':
+                errorMessage = "이미 가입된 이메일 주소입니다.";
+                break;
+            case 'auth/invalid-email':
+                errorMessage = "유효하지 않은 이메일 형식입니다.";
+                break;
+            case 'auth/weak-password':
+                errorMessage = "비밀번호는 최소 6자 이상이어야 합니다.";
+                break;
+            default:
+                console.log("Firebase Signup Error:", error.code, error.message);
+                break;
+        }
+        
+        // ✅ Alert 창으로 에러 메시지 표시
+        Alert.alert("회원가입 오류", errorMessage);
     }
   };
 

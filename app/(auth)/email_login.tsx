@@ -2,7 +2,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import React, { useContext, useEffect, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Alert, Keyboard, KeyboardAvoidingView, Platform, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { SafeAreaView } from "react-native-safe-area-context";
 import { auth } from '../../firebaseConfig';
 import { AuthContext } from '../../src/services/auth/authContext';
 
@@ -39,8 +40,17 @@ export default function EmailLogin() {
             setErrorMessage(null);
             logIn();
         } catch (error: any) {
-            console.log(error);
-            setErrorMessage(error.message || "회원가입에 실패했습니다.");
+            let errorMessage = "이메일 또는 비밀번호를 확인해주세요.";
+            
+            switch (error.code) {
+                case 'auth/invalid-email':
+                    errorMessage = "유효하지 않은 이메일 형식입니다.";
+                    break;
+                case 'auth/user-not-found':
+                    errorMessage = "해당 이메일로 등록된 사용자가 없습니다.";
+                    break;
+            }
+            Alert.alert("오류", errorMessage);
         }
     };
            
