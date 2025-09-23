@@ -1,29 +1,105 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function AddFocusPlace() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const [name, setName] = useState('새로운 집중장소');
-  const [address, setAddress] = useState('51-1, 충대로13번길, 청주시');
+  
+  const isEditMode = params.editMode === 'true';
+  const placeId = params.placeId;
+  
+  const [name, setName] = useState(isEditMode ? (params.name as string) : '새로운 집중장소');
+  const [address, setAddress] = useState(params.address || '51-1, 충대로13번길, 청주시');
+  const [latitude] = useState(params.latitude ? Number(params.latitude) : undefined);
+  const [longitude] = useState(params.longitude ? Number(params.longitude) : undefined);
+  const [radius] = useState(params.radius ? Number(params.radius) : 400);
   const appsBlockedCount = 0;
 
-  // 위치 선택 화면으로 이동
-  const goToMap = () => {
-    router.push({
-      pathname: '/(protected)/(tabs)/(focus_zone)/map',
-      params: {
-        // 필요시 파라미터 전달r
-      }
-    });
+const goToMap = () => {
+  const mapParams = {
+    latitude: latitude,
+    longitude: longitude,
+    radius: radius,
+    address: address,
   };
 
+  // 수정 모드인 경우 수정 정보도 함께 전달
+  if (isEditMode) { // isEditMode true
+    Object.assign(mapParams, {
+      editMode: 'true',
+      placeId: placeId,
+      name: name,
+    });
+  }
+
+  router.replace({
+    pathname: '/(protected)/(tabs)/(focus_zone)/map',
+    params: mapParams
+  });
+};
+
   const onCancel = () => router.back();
-  const onSave = () => {
-    router.back();
+  
+  const onSave = async () => {
+    if (!name.trim()) {
+      Alert.alert('오류', '집중장소명을 입력해주세요.');
+      return;
+    }
+
+    if (!address || address === '주소를 선택하세요') {
+      Alert.alert('오류', '위치를 선택해주세요.');
+      return;
+    }
+
+    try {
+      const savedPlaces = await AsyncStorage.getItem('focusPlaces');
+      let places = savedPlaces ? JSON.parse(savedPlaces) : [];
+
+      if (isEditMode) {
+        // 수정 모드
+        places = places.map(place =>
+          place.id === placeId
+            ? {
+                ...place,
+                name: name.trim(),
+                address: address as string,
+                latitude,
+                longitude,
+                radius,
+              }
+            : place
+        );
+        
+        await AsyncStorage.setItem('focusPlaces', JSON.stringify(places));
+        Alert.alert('성공', '집중장소가 수정되었습니다.', [
+          { text: '확인', onPress: () => router.back() }
+        ]);
+      } else {
+        // 새로 추가 모드
+        const newPlace = {
+          id: Date.now().toString(),
+          name: name.trim(),
+          address: address as string,
+          latitude,
+          longitude,
+          radius,
+          count: 0,
+          selected: false,
+        };
+
+        places.push(newPlace);
+        await AsyncStorage.setItem('focusPlaces', JSON.stringify(places));
+        Alert.alert('성공', '집중장소가 등록되었습니다.', [
+          { text: '확인', onPress: () => router.back() }
+        ]);
+      }
+    } catch (error) {
+      Alert.alert('오류', '저장에 실패했습니다.');
+    }
   };
 
   return (
@@ -32,14 +108,15 @@ export default function AddFocusPlace() {
         <TouchableOpacity onPress={onCancel}>
           <Text style={[styles.headerAction, { color: '#EF4444' }]}>취소</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>집중장소 등록</Text>
+        <Text style={styles.headerTitle}>
+          {isEditMode ? '집중장소 수정' : '집중장소 등록'}
+        </Text>
         <TouchableOpacity onPress={onSave}>
           <Text style={[styles.headerAction, { color: '#2563EB' }]}>저장</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16 }}>
-        {/* 집중장소명 */}
         <View style={styles.card}>
           <Text style={styles.label}>집중장소명</Text>
           <TextInput
@@ -50,7 +127,6 @@ export default function AddFocusPlace() {
           />
         </View>
 
-        {/* 위치 */}
         <View style={styles.card}>
           <Text style={styles.label}>위치</Text>
           <TouchableOpacity style={styles.rowBtn} activeOpacity={0.8} onPress={goToMap}>
@@ -59,7 +135,11 @@ export default function AddFocusPlace() {
           </TouchableOpacity>
         </View>
 
-        {/* 차단할 앱 */}
+        <View style={styles.card}>
+          <Text style={styles.label}>반지름</Text>
+          <Text style={styles.rowBtnText}>{radius}m</Text>
+        </View>
+
         <View style={styles.card}>
           <Text style={styles.label}>차단할 앱</Text>
           <TouchableOpacity style={styles.rowBtn} activeOpacity={0.8}>
