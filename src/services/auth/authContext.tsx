@@ -54,7 +54,7 @@ export function AuthProvider({ children }: PropsWithChildren ){
 
         storeAuthState({isLoggedIn: true});//비동기 함수로 상태를 저장
 
-        router.replace("/(protected)/(tabs)");//페이지 라우터 변경
+        router.replace("/(protected)/(tabs)/(focus_zone)");//페이지 라우터 변경
     }
     const logOut = () => {
         setIsLoggedIn(false);
