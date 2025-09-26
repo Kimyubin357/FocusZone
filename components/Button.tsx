@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface Props {
-  title: string;
+  title: string;//버튼에 들어갈 글자
   backgroundColor: string;//버튼 색
   textColor?: string;//글자 색
   onPress: () => void;
@@ -40,9 +40,6 @@ const styles = StyleSheet.create({
   contentContainer: {
     flexDirection: 'row',//요소들끼리 정렬을 수평으로 
     alignItems: 'center',
-  },
-  iconContainer: {
-    marginRight: 20,
   },
   buttonText: {
     fontSize: 19,
