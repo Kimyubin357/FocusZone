@@ -163,6 +163,14 @@ export default function FocusZoneScreen() {
     }
   };
 
+  const getCurrentLocation  = async () => {
+    if (webViewRef.current) {
+      webViewRef.current.postMessage(JSON.stringify({
+        type: 'moveToLocation',
+      }));
+    }
+  }
+
   // 지도 표시 업데이트
   const updateMapDisplay = () => {
     if (webViewRef.current) {
@@ -324,6 +332,8 @@ export default function FocusZoneScreen() {
   };
 
   return (
+
+    
     <View style={styles.container}>
       <WebView
         ref={webViewRef}
@@ -347,7 +357,13 @@ export default function FocusZoneScreen() {
           {showAllPlaces ? "선택된 장소만" : "전체 보기"}
         </Text>
       </TouchableOpacity>
-
+      <TouchableOpacity 
+        style={styles.locationButton} 
+        onPress={getCurrentLocation}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="locate" size={25} color="#2E82FF" />
+      </TouchableOpacity>    
       <BottomSheet
         ref={bottomSheetRef}
         index={0}
@@ -388,7 +404,7 @@ export default function FocusZoneScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   toggleButton: {
-    position: 'absolute',
+    position: 'static',
     top: 60,
     right: 16,
     backgroundColor: 'rgba(37, 99, 235, 0.9)',
@@ -400,6 +416,23 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 1000,
+  },
+  locationButton: {
+    position: "absolute",
+    top: 60,
+    right: 16,
+    height: 50,
+    width: 50,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 25,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 4,
     zIndex: 1000,
