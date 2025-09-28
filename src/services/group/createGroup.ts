@@ -88,10 +88,3 @@ export async function createGroup(
   const ref = await addDoc(groupsCol, payload);
   return { id: ref.id, ref };
 }
-
-// --- 사용 예시 ---
-// await createGroup({
-//   ownerId: user.uid,
-//   data: { name: "우리팀", activeDays: [1,3,5] }, // 월/수/금
-//   db,
-// });
