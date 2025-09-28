@@ -1,10 +1,8 @@
 // src/services/group/createGroup.ts
-// Firestore에 그룹 문서를 생성하는 서비스 함수
+// Firestore에 그룹 문서를 생성하는 서비스 함수 (요일만 추가: activeDays)
 
 import type { DocumentReference, Firestore } from "firebase/firestore";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-
-// 프로젝트 루트에 firebaseConfig.js가 있을 때의 상대경로 (src/services/group → ../../../)
 import { db as defaultDb } from "../../../firebaseConfig";
 
 export type Visibility = "public" | "private";
@@ -14,6 +12,7 @@ export interface GroupInput {
   description?: string;
   visibility?: Visibility;
   memberIds?: string[];
+  activeDays: number[]; // ★ 추가: 0~6 (일~토)
 }
 
 export interface GroupDoc {
@@ -22,6 +21,7 @@ export interface GroupDoc {
   visibility: Visibility;
   ownerId: string;
   memberIds: string[];
+  activeDays: number[]; // ★ 추가
   createdAt: ReturnType<typeof serverTimestamp>;
   updatedAt: ReturnType<typeof serverTimestamp>;
 }
@@ -47,6 +47,7 @@ function assertValid(input: CreateGroupParams) {
  * - 컬렉션: "groups"
  * - ownerId를 memberIds에 자동 포함(중복 제거)
  * - createdAt/updatedAt = serverTimestamp()
+ * - activeDays: [0~6] (일~토)
  */
 export async function createGroup(
   params: CreateGroupParams
@@ -62,9 +63,16 @@ export async function createGroup(
 
   const groupsCol = collection(firestore, "groups");
 
+  // 멤버 구성: owner 포함 + 중복 제거
   const uniqueMembers = Array.from(
     new Set([params.ownerId, ...(params.data.memberIds ?? [])])
   );
+
+  // 요일 정렬(옵션) 및 유효 범위 보정(0~6)
+  const normalizedDays = (params.data.activeDays ?? [])
+    .map((d) => Number(d))
+    .filter((d) => d >= 0 && d <= 6)
+    .sort((a, b) => a - b);
 
   const payload: GroupDoc = {
     name: params.data.name.trim(),
@@ -72,6 +80,7 @@ export async function createGroup(
     visibility: params.data.visibility ?? "private",
     ownerId: params.ownerId,
     memberIds: uniqueMembers,
+    activeDays: normalizedDays, // ★ 저장
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -80,7 +89,9 @@ export async function createGroup(
   return { id: ref.id, ref };
 }
 
-// 사용 예시:
-// await createGroup({ ownerId: user.uid, data: { name: "우리팀", visibility: "private" } });
-// 또는 db 주입:
-// await createGroup({ ownerId: user.uid, data: { name: "우리팀" }, db });
+// --- 사용 예시 ---
+// await createGroup({
+//   ownerId: user.uid,
+//   data: { name: "우리팀", activeDays: [1,3,5] }, // 월/수/금
+//   db,
+// });

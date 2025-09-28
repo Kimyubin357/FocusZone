@@ -10,9 +10,10 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
   FlatList,
   Modal,
   Pressable,
@@ -24,22 +25,37 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { auth, db } from "../../../../firebaseConfig";
 
-// ---- 타입(필요한 필드만 정의; 백엔드 구조에 맞춰 확장하세요)
+// ---- 타입
 type GroupItem = {
   id: string;
   locationName: string;
   address: string;
-  ownerName?: string; // 없으면 "알 수 없음"
-  statusLabel?: string; // 예: "그룹형", "부재 중"
+  ownerName?: string;
   memberIds?: string[];
-  memberAvatars?: string[]; // URL 이나 이니셜 (여기서는 이니셜 가정)
+  memberAvatars?: string[];
+  activeDays?: number[]; // [0~6] = 일~토
 };
+
+// 요일 라벨
+const DAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
 export default function GroupZone() {
   const router = useRouter();
   const [list, setList] = useState<GroupItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // 메뉴 상태(어느 카드인지 + 버튼 좌표 앵커)
   const [menuForId, setMenuForId] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
+
+  const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
+  const MENU_W = 180;
+  const MENU_H = 160; // 대략치(항목 3~4개 기준)
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -56,7 +72,6 @@ export default function GroupZone() {
   const load = async (uid: string) => {
     try {
       setLoading(true);
-      // ⚠️ 현재는 "내가 만든 장소"만: userId == uid
       const colRef = collection(db, "groupLocations");
       const qy = query(colRef, where("userId", "==", uid));
       const snap = await getDocs(qy);
@@ -67,9 +82,9 @@ export default function GroupZone() {
           locationName: data.locationName ?? "그룹장소명",
           address: data.address ?? "",
           ownerName: data.ownerName ?? data.owner ?? "알 수 없음",
-          statusLabel: data.statusLabel ?? (data.isAway ? "부재 중" : "그룹형"),
           memberIds: data.memberIds ?? [],
-          memberAvatars: data.memberAvatars ?? [], // 없으면 아래에서 이니셜로 대체
+          memberAvatars: data.memberAvatars ?? [],
+          activeDays: data.activeDays ?? [],
         };
       });
       setList(rows);
@@ -80,12 +95,20 @@ export default function GroupZone() {
 
   const goToAdd = () => router.push("/(protected)/(tabs)/(group_zone)/add");
 
-  const onPressCardMenu = (id: string) => setMenuForId(id);
-  const closeMenu = () => setMenuForId(null);
+  const onPressCardMenu = (
+    id: string,
+    anchor: { x: number; y: number; w: number; h: number }
+  ) => {
+    setMenuForId(id);
+    setMenuAnchor(anchor);
+  };
+  const closeMenu = () => {
+    setMenuForId(null);
+    setMenuAnchor(null);
+  };
 
   const onEdit = () => {
     if (!menuForId) return;
-    // 라우팅 예시(필요에 맞게 수정): /add?editMode=true&placeId=...
     router.push({
       pathname: "/(protected)/(tabs)/(group_zone)/add",
       params: { editMode: "true", placeId: menuForId },
@@ -110,6 +133,19 @@ export default function GroupZone() {
     }
   };
 
+  // 앵커 기준 좌표 계산(화면 밖 보정)
+  const menuTop = (() => {
+    if (!menuAnchor) return 90;
+    const below = menuAnchor.y + menuAnchor.h + 8;
+    const above = menuAnchor.y - MENU_H - 8;
+    return below + MENU_H <= SCREEN_H ? below : Math.max(8, above);
+  })();
+  const menuLeft = (() => {
+    if (!menuAnchor) return SCREEN_W - MENU_W - 20;
+    const preferred = menuAnchor.x + menuAnchor.w - MENU_W;
+    return Math.min(Math.max(8, preferred), SCREEN_W - MENU_W - 8);
+  })();
+
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Ionicons name="location-outline" size={48} color="#D1D5DB" />
@@ -121,7 +157,10 @@ export default function GroupZone() {
   );
 
   const renderItem = ({ item }: { item: GroupItem }) => (
-    <GroupCard item={item} onPressMenu={() => onPressCardMenu(item.id)} />
+    <GroupCard
+      item={item}
+      onPressMenu={(anchor) => onPressCardMenu(item.id, anchor)}
+    />
   );
 
   return (
@@ -145,7 +184,7 @@ export default function GroupZone() {
         <Ionicons name="add" size={32} color="#fff" />
       </TouchableOpacity>
 
-      {/* 카드별 3점 메뉴 */}
+      {/* 카드별 3점 메뉴 (앵커 위치에 표시) */}
       <Modal
         visible={!!menuForId}
         transparent
@@ -155,7 +194,12 @@ export default function GroupZone() {
         <Pressable style={styles.menuBackdrop} onPress={closeMenu}>
           <View />
         </Pressable>
-        <View style={styles.menuBox}>
+        <View
+          style={[
+            styles.menuBox,
+            { position: "absolute", top: menuTop, left: menuLeft },
+          ]}
+        >
           <Pressable style={styles.menuItem} onPress={onEdit}>
             <Text style={styles.menuText}>수정하기</Text>
           </Pressable>
@@ -178,11 +222,11 @@ function GroupCard({
   onPressMenu,
 }: {
   item: GroupItem;
-  onPressMenu: () => void;
+  onPressMenu: (anchor: { x: number; y: number; w: number; h: number }) => void;
 }) {
   const memberCount = item.memberIds?.length ?? 0;
+
   const avatars = useMemo(() => {
-    // 이니셜 자리수 6개만 노출(예시)
     const arr =
       item.memberAvatars && item.memberAvatars.length > 0
         ? item.memberAvatars.slice(0, 6)
@@ -193,8 +237,20 @@ function GroupCard({
     return arr;
   }, [item.memberAvatars, memberCount]);
 
-  const statusChipBg = item.statusLabel === "부재 중" ? "#FFE4E6" : "#E0E7FF";
-  const statusChipText = item.statusLabel === "부재 중" ? "#B91C1C" : "#3730A3";
+  // 오늘 활성 여부
+  const today = new Date().getDay(); // 0=일 ~ 6=토
+  const isActiveToday = (item.activeDays ?? []).includes(today);
+  const chipBg = isActiveToday ? "#DCFCE7" : "#F3F4F6";
+  const chipText = isActiveToday ? "#166534" : "#6B7280";
+  const chipLabel = isActiveToday ? "오늘 활성" : "오늘 비활성";
+
+  // 메뉴 버튼 위치 측정용 ref
+  const menuBtnRef = useRef<View>(null);
+  const handleMenuPress = () => {
+    menuBtnRef.current?.measureInWindow((x, y, w, h) => {
+      onPressMenu({ x, y, w, h });
+    });
+  };
 
   return (
     <View style={styles.card}>
@@ -203,7 +259,11 @@ function GroupCard({
         <Text style={styles.cardTitle} numberOfLines={1}>
           {item.locationName || "그룹장소명"}
         </Text>
-        <TouchableOpacity style={styles.menuBtn} onPress={onPressMenu}>
+        <TouchableOpacity
+          ref={menuBtnRef as any}
+          style={styles.menuBtn}
+          onPress={handleMenuPress}
+        >
           <Ionicons name="ellipsis-horizontal" size={20} color="#6B7280" />
         </TouchableOpacity>
       </View>
@@ -221,22 +281,50 @@ function GroupCard({
         </Text>
       </View>
 
-      {/* 오너 + 상태칩 */}
+      {/* 오너 + (오늘 활성/비활성) 칩 */}
       <View style={[styles.rowBetween, { marginTop: 8 }]}>
         <View style={styles.row}>
           <Ionicons
-            name="person-circle-outline" //수정
+            name="person-circle-outline"
             size={16}
             color="#6B7280"
             style={{ marginRight: 6 }}
           />
           <Text style={styles.ownerText}>{item.ownerName ?? "알 수 없음"}</Text>
         </View>
-        <View style={[styles.chip, { backgroundColor: statusChipBg }]}>
-          <Text style={[styles.chipText, { color: statusChipText }]}>
-            {item.statusLabel ?? "그룹형"}
+        <View style={[styles.chip, { backgroundColor: chipBg }]}>
+          <Text style={[styles.chipText, { color: chipText }]}>
+            {chipLabel}
           </Text>
         </View>
+      </View>
+
+      {/* 요일 칩들 */}
+      <View style={styles.daysRow}>
+        {DAYS.map((label, idx) => {
+          const active = (item.activeDays ?? []).includes(idx);
+          return (
+            <View
+              key={idx}
+              style={[
+                styles.dayChip,
+                {
+                  borderColor: active ? "#2563EB" : "#D1D5DB",
+                  backgroundColor: active ? "#DBEAFE" : "#F3F4F6",
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.dayText,
+                  { color: active ? "#1E40AF" : "#6B7280" },
+                ]}
+              >
+                {label}
+              </Text>
+            </View>
+          );
+        })}
       </View>
 
       {/* 하단: 멤버 아이콘들 + 총 인원 */}
@@ -336,6 +424,25 @@ const styles = StyleSheet.create({
   chip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 9999 },
   chipText: { fontSize: 12, fontWeight: "700" },
 
+  // 요일 칩 영역( gap 대신 margin 사용 )
+  daysRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: 10,
+    marginRight: -8,
+  },
+  dayChip: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  dayText: { fontSize: 12, fontWeight: "700" },
+
   avatar: {
     width: 28,
     height: 28,
@@ -352,12 +459,9 @@ const styles = StyleSheet.create({
 
   menuBtn: { padding: 6, marginLeft: 8 },
 
-  // 메뉴(모달)
+  // 모달
   menuBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.2)" },
   menuBox: {
-    position: "absolute",
-    right: 20,
-    top: 90, // 필요시 위치 조정
     backgroundColor: "#fff",
     borderRadius: 12,
     paddingVertical: 4,
