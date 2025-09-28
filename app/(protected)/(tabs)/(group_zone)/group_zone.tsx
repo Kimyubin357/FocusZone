@@ -6,6 +6,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   query,
   where,
@@ -72,6 +73,33 @@ export default function GroupZone() {
   const load = async (uid: string) => {
     try {
       setLoading(true);
+
+      // 0) 내 닉네임 1회 조회 (users/{uid})
+      let myNickname = "알 수 없음";
+      try {
+        const meSnap = await getDoc(doc(db, "users", uid));
+        if (meSnap.exists()) {
+          const u = meSnap.data() as any;
+          myNickname =
+            u?.nickname ??
+            auth.currentUser?.displayName ??
+            auth.currentUser?.email?.split("@")[0] ??
+            "알 수 없음";
+        } else {
+          myNickname =
+            auth.currentUser?.displayName ??
+            auth.currentUser?.email?.split("@")[0] ??
+            "알 수 없음";
+        }
+      } catch (e) {
+        // 프로필 조회 실패 시 displayName/email 로 폴백
+        myNickname =
+          auth.currentUser?.displayName ??
+          auth.currentUser?.email?.split("@")[0] ??
+          "알 수 없음";
+      }
+
+      // 1) 내 그룹장소 가져오기
       const colRef = collection(db, "groupLocations");
       const qy = query(colRef, where("userId", "==", uid));
       const snap = await getDocs(qy);
@@ -81,12 +109,14 @@ export default function GroupZone() {
           id: d.id,
           locationName: data.locationName ?? "그룹장소명",
           address: data.address ?? "",
-          ownerName: data.ownerName ?? data.owner ?? "알 수 없음",
+          // 문서에 ownerName/owner 가 없으면 → 내 닉네임으로 표기
+          ownerName: data.ownerName ?? data.owner ?? myNickname,
           memberIds: data.memberIds ?? [],
           memberAvatars: data.memberAvatars ?? [],
           activeDays: data.activeDays ?? [],
         };
       });
+
       setList(rows);
     } finally {
       setLoading(false);
