@@ -1,49 +1,90 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, NativeModules, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function AddFocusPlace() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  
+
   const isEditMode = params.editMode === 'true';
   const placeId = params.placeId;
-  
+
   const [name, setName] = useState(isEditMode ? (params.name as string) : '새로운 집중장소');
   const [address, setAddress] = useState(params.address || '51-1, 충대로13번길, 청주시');
   const [latitude] = useState(params.latitude ? Number(params.latitude) : undefined);
   const [longitude] = useState(params.longitude ? Number(params.longitude) : undefined);
   const [radius] = useState(params.radius ? Number(params.radius) : 400);
-  const appsBlockedCount = 0;
 
-const goToMap = () => {
-  const mapParams = {
-    latitude: latitude,
-    longitude: longitude,
-    radius: radius,
-    address: address,
+  // 차단 앱: 포커스 시 AsyncStorage에서 항상 최신으로 로드
+  const [blockedApps, setBlockedApps] = useState<string[]>(
+    params.blockedApps
+      ? (typeof params.blockedApps === 'string' ? JSON.parse(params.blockedApps as string) : (params.blockedApps as string[]))
+      : []
+  );
+  const appsBlockedCount = blockedApps.length;
+  const { BlockedApps } = NativeModules;
+
+  useFocusEffect(
+    React.useCallback(() => {
+      let cancelled = false;
+      const load = async () => {
+        try {
+          const saved = await AsyncStorage.getItem('blockedApps');
+          if (saved && !cancelled) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) setBlockedApps(parsed as string[]);
+          }
+        } catch {
+          // ignore
+        }
+      };
+      load();
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
+
+  React.useEffect(() => {
+    const setBlockedAppsAsync = async () => {
+      try {
+        await BlockedApps.setBlockedApps(blockedApps);
+        console.log('Blocked apps set successfully:', blockedApps);
+      } catch (error) {
+        console.error('Failed to set blocked apps:', error);
+      }
+    };
+    setBlockedAppsAsync();
+  }, [blockedApps]);
+
+  const goToMap = () => {
+    const mapParams = {
+      latitude: latitude,
+      longitude: longitude,
+      radius: radius,
+      address: address,
+    };
+
+    if (isEditMode) {
+      Object.assign(mapParams, {
+        editMode: 'true',
+        placeId: placeId,
+        name: name,
+      });
+    }
+
+    router.replace({
+      pathname: '/(protected)/(tabs)/(focus_zone)/map',
+      params: mapParams
+    });
   };
 
-  // 수정 모드인 경우 수정 정보도 함께 전달
-  if (isEditMode) { // isEditMode true
-    Object.assign(mapParams, {
-      editMode: 'true',
-      placeId: placeId,
-      name: name,
-    });
-  }
-
-  router.replace({
-    pathname: '/(protected)/(tabs)/(focus_zone)/map',
-    params: mapParams
-  });
-};
-
   const onCancel = () => router.back();
-  
+
   const onSave = async () => {
     if (!name.trim()) {
       Alert.alert('오류', '집중장소명을 입력해주세요.');
@@ -60,26 +101,24 @@ const goToMap = () => {
       let places = savedPlaces ? JSON.parse(savedPlaces) : [];
 
       if (isEditMode) {
-        // 수정 모드
         places = places.map(place =>
           place.id === placeId
             ? {
-                ...place,
-                name: name.trim(),
-                address: address as string,
-                latitude,
-                longitude,
-                radius,
-              }
+              ...place,
+              name: name.trim(),
+              address: address as string,
+              latitude,
+              longitude,
+              radius,
+            }
             : place
         );
-        
+
         await AsyncStorage.setItem('focusPlaces', JSON.stringify(places));
         Alert.alert('성공', '집중장소가 수정되었습니다.', [
           { text: '확인', onPress: () => router.back() }
         ]);
       } else {
-        // 새로 추가 모드
         const newPlace = {
           id: Date.now().toString(),
           name: name.trim(),
@@ -142,9 +181,21 @@ const goToMap = () => {
 
         <View style={styles.card}>
           <Text style={styles.label}>차단할 앱</Text>
-          <TouchableOpacity style={styles.rowBtn} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.rowBtn}
+            activeOpacity={0.8}
+            onPress={() =>
+              router.push({
+                pathname: "/(protected)/(tabs)/(focus_zone)/appselect",
+                // 최신 선택값을 전달
+                params: { selectedApps: JSON.stringify(blockedApps) }
+              })
+            }
+          >
             <Ionicons name="grid-outline" size={18} color="#2563EB" />
-            <Text style={styles.rowBtnText}>앱 목록  <Text style={{ color: '#2563EB', fontWeight: 'bold' }}>{appsBlockedCount}</Text></Text>
+            <Text style={styles.rowBtnText}>
+              앱 목록 <Text style={{ color: "#2563EB", fontWeight: "bold" }}>{appsBlockedCount}</Text>
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
