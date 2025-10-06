@@ -1,16 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import {
-  collection,
-  doc,
-  getDocs,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
-} from "firebase/firestore";
-import React, { useContext, useEffect, useMemo, useState } from "react";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import React, { useEffect, useState } from "react";
 import {
   Alert,
   Keyboard,
@@ -25,15 +16,12 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { auth, db } from "../../firebaseConfig";
-import { AuthContext } from "../../src/services/auth/authContext";
+import { auth } from "../../firebaseConfig";
 
 export default function EmailSignUp() {
   const router = useRouter();
-  const { logIn } = useContext(AuthContext);
 
   const [email, setEmail] = useState("");
-  const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [isPasswordValid, setIsPasswordValid] = useState(false);
   const [isEmailValid, setIsEmailValid] = useState(false);
@@ -42,88 +30,38 @@ export default function EmailSignUp() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // 닉네임 규칙: 2~12자, 한글/영문/숫자/밑줄
-  const nicknameValid = useMemo(
-    () => /^[\p{Script=Hangul}A-Za-z0-9_]{2,12}$/u.test(nickname.trim()),
-    [nickname]
-  );
-
   useEffect(() => {
-    const passwordValid = password.length >= 8; // UI 기준 8자 이상
+    const passwordValid = password.length >= 8;
     setIsPasswordValid(passwordValid);
 
     const emailValid = /\S+@\S+\.\S+/.test(email);
     setIsEmailValid(emailValid);
 
-    setIsFormValid(passwordValid && emailValid && nicknameValid);
-  }, [email, password, nicknameValid]);
+    setIsFormValid(passwordValid && emailValid);
+  }, [email, password]);
 
   const getPasswordIndicatorColor = () => {
     if (password.length === 0) return "#ccc";
     return isPasswordValid ? "green" : "red";
   };
 
-  // 닉네임 중복 검사
-  const checkNicknameDuplicate = async (name: string) => {
-    const q = query(
-      collection(db, "users"),
-      where("nicknameLower", "==", name.toLowerCase())
-    );
-    const snap = await getDocs(q);
-    return snap.empty; // 비어있으면 사용 가능
-  };
-
   const handleContinue = async () => {
     if (!isFormValid || loading) return;
-
-    const trimmedNick = nickname.trim();
-    if (!nicknameValid || trimmedNick.length === 0) {
-      Alert.alert(
-        "닉네임 확인",
-        "닉네임은 2~12자, 한글/영문/숫자/밑줄(_)만 가능합니다."
-      );
-      return;
-    }
-
     setLoading(true);
-    try {
-      // 1) 닉네임 중복 검사
-      const available = await checkNicknameDuplicate(trimmedNick);
-      if (!available) {
-        setLoading(false);
-        Alert.alert(
-          "중복 닉네임",
-          "이미 사용 중인 닉네임입니다. 다른 닉네임을 입력해주세요."
-        );
-        return;
-      }
 
-      // 2) Auth 회원가입
+    try {
       const cred = await createUserWithEmailAndPassword(
         auth,
         email.trim(),
         password
       );
 
-      // 3) Auth displayName 업데이트(선택이지만 있으면 편리)
-      await updateProfile(cred.user, { displayName: trimmedNick });
-
-      // 4) Firestore에 프로필 문서 생성 (users/{uid})
-      const uid = cred.user.uid;
-      await setDoc(doc(db, "users", uid), {
-        uid,
-        email: cred.user.email,
-        nickname: trimmedNick,
-        nicknameLower: trimmedNick.toLowerCase(),
-        createdAt: serverTimestamp(),
-      });
-
       setErrorMessage(null);
 
-      // onAuthStateChanged 흐름을 쓰는 앱 구조라면 이 호출로 트리거
-      logIn();
-      // 또는 라우팅을 직접 하고 싶다면:
-      // router.replace('/(protected)/(tabs)/(focus_zone)');
+      // ✅ 변경됨: 회원가입 완료 후 바로 logIn() 하지 않음
+      // 대신 set_user_info.tsx 화면으로 이동
+      router.push("/(auth)/set_user_info");
+      
     } catch (error: any) {
       let msg = "회원가입에 실패했습니다. 잠시 후 다시 시도해 주세요.";
       switch (error.code) {
@@ -134,7 +72,6 @@ export default function EmailSignUp() {
           msg = "유효하지 않은 이메일 형식입니다.";
           break;
         case "auth/weak-password":
-          // Firebase 기본 기준은 6자 이상이지만, 이 화면은 8자 기준으로 안내 중
           msg = "비밀번호는 최소 8자 이상이어야 합니다.";
           break;
         default:
@@ -148,15 +85,10 @@ export default function EmailSignUp() {
     }
   };
 
-  const handleDismissKeyboard = () => {
-    Keyboard.dismiss();
-  };
+  const handleDismissKeyboard = () => Keyboard.dismiss();
 
   return (
-    <TouchableWithoutFeedback
-      onPress={handleDismissKeyboard}
-      accessible={false}
-    >
+    <TouchableWithoutFeedback onPress={handleDismissKeyboard} accessible={false}>
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
         <KeyboardAvoidingView
@@ -180,32 +112,9 @@ export default function EmailSignUp() {
               />
             </View>
 
-            {/* 닉네임 */}
-            <View style={styles.inputWrapper}>
-              <Ionicons style={styles.icon} name="person-outline" size={24} />
-              <TextInput
-                style={styles.input}
-                placeholder="닉네임 (2~12자, 한글/영문/숫자/_)"
-                placeholderTextColor="grey"
-                autoCapitalize="none"
-                value={nickname}
-                onChangeText={setNickname}
-                returnKeyType="done"
-              />
-            </View>
-            {!nicknameValid && nickname.length > 0 && (
-              <Text style={{ color: "red", marginBottom: 8 }}>
-                닉네임 형식이 올바르지 않습니다.
-              </Text>
-            )}
-
             {/* 비밀번호 */}
             <View style={styles.inputWrapper}>
-              <Ionicons
-                style={styles.icon}
-                name="lock-closed-outline"
-                size={24}
-              />
+              <Ionicons style={styles.icon} name="lock-closed-outline" size={24} />
               <TextInput
                 style={styles.input}
                 placeholder="암호 (최소 8자)"
@@ -250,9 +159,7 @@ export default function EmailSignUp() {
             <TouchableOpacity
               style={[
                 styles.continueButton,
-                {
-                  backgroundColor: isFormValid && !loading ? "#2196F3" : "#ccc",
-                },
+                { backgroundColor: isFormValid && !loading ? "#2196F3" : "#ccc" },
               ]}
               onPress={handleContinue}
               disabled={!isFormValid || loading}

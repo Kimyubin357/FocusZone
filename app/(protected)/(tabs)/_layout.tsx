@@ -19,7 +19,7 @@ export default function TabsLayout() {
         }} 
       />
       <Tabs.Screen
-        name="stats"
+        name="(stats)"
         options={{
           title : '통계',
           tabBarIcon: ({ color, focused }) => (

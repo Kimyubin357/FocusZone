@@ -1,10 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc } from "firebase/firestore";
 import React, { useContext, useEffect, useState } from 'react';
 import { Alert, Keyboard, KeyboardAvoidingView, Platform, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
-import { auth } from '../../firebaseConfig';
+import { auth, db } from '../../firebaseConfig';
 import { AuthContext } from '../../src/services/auth/authContext';
 
 export default function EmailLogin() {
@@ -35,10 +36,33 @@ export default function EmailLogin() {
     const handleContinue = async () => {
         if (!isFormValid) return;
         try {
-            await signInWithEmailAndPassword(auth, email, password);
+            // 1. Firebase Auth 로그인 시도
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            const { uid } = userCredential.user;
+
+            // 2. Firestore에서 uid로 사용자 문서 불러오기
+            const userDocRef = doc(db, "users", uid);
+            const userSnap = await getDoc(userDocRef);
+
+            if(!userSnap.exists()) {
+                Alert.alert("오류", "사용자 정보가 존재하지 않습니다.");
+                return;
+            }
+
+            const userData = userSnap.data();// 던져줄 인자값
+
+            // 3. AuthContext로 전달 (전역 상태 + AsyncStorage에 저장)
+            logIn({
+                uid,
+                email: userData.email,
+                nickname: userData.nickname,
+                profileImage: userData.profileImage || "",
+                provider: "email",
+            });
+
             // 회원가입 성공하면 onAuthStateChanged가 감지해서 자동 라우팅됨
             setErrorMessage(null);
-            logIn();
+            
         } catch (error: any) {
             let errorMessage = "이메일 또는 비밀번호를 확인해주세요.";
             
