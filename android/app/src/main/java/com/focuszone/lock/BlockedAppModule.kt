@@ -18,7 +18,7 @@ class BlockedAppsModule(reactContext: ReactApplicationContext) :
         private const val ERROR_NO_APPS = "NO_APPS_PROVIDED"
     }
 
-    /** ✅ RN → Kotlin : 차단할 앱 목록 설정 */
+    /*RN → Kotlin : 차단할 앱 목록 설정 */
     @ReactMethod
     fun setBlockedApps(apps: ReadableArray, promise: Promise) {
         try {
@@ -26,10 +26,8 @@ class BlockedAppsModule(reactContext: ReactApplicationContext) :
             for (i in 0 until apps.size()) {
                 apps.getString(i)?.let { appList.add(it) }
             }
-            if (appList.isEmpty()) {
-                promise.reject(ERROR_NO_APPS, "No apps provided")
-                return
-            }
+            
+            // 빈 배열도 허용 (차단 해제 목적)
             BlockedAppsHolder.blockedApps = appList
             promise.resolve(true)
         } catch (e: Exception) {
@@ -37,7 +35,7 @@ class BlockedAppsModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    /** ✅ RN → Kotlin : 현재 차단 앱 목록 가져오기 */
+    /*RN → Kotlin : 현재 차단 앱 목록 가져오기 */
     @ReactMethod
     fun getBlockedApps(promise: Promise) {
         try {
@@ -49,7 +47,7 @@ class BlockedAppsModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    /** ✅ 설치된 앱 전체 목록 반환 (시스템앱 제외 + 실행 가능한 앱만) */
+    /* 설치된 앱 전체 목록 반환 */
     @ReactMethod
     fun getInstalledApps(promise: Promise) {
         try {
@@ -58,21 +56,21 @@ class BlockedAppsModule(reactContext: ReactApplicationContext) :
             val resultArray = Arguments.createArray()
 
             for (appInfo in appInfos) {
-                // 🚫 시스템 앱 제외
+        
                 if ((appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0 ||
                     (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
                 ) continue
 
-                // 🚫 실행 불가능한 앱 제외
+              
                 val launchIntent = pm.getLaunchIntentForPackage(appInfo.packageName)
                 if (launchIntent == null) continue
 
-                // ✅ 앱 정보 구성
+               
                 val appMap = Arguments.createMap()
                 appMap.putString("packageName", appInfo.packageName)
                 appMap.putString("appName", pm.getApplicationLabel(appInfo).toString())
 
-                // ✅ 카테고리 구분
+            
                 val category = when (appInfo.category) {
                     ApplicationInfo.CATEGORY_GAME -> "Game"
                     ApplicationInfo.CATEGORY_AUDIO -> "Audio"
