@@ -1,75 +1,125 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  LayoutAnimation,
+  NativeModules,
+  Platform,
+  SectionList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  UIManager,
+  View
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const MOCK_APPS = [
-  { id: "com.instagram.android", name: "Instagram" },
-  { id: "com.facebook.katana", name: "Facebook" },
-  { id: "com.google.android.youtube", name: "YouTube" },
-  { id: "com.kakao.talk", name: "카카오톡" }
-];
+const { BlockedApps } = NativeModules;
+
+// Android 전용 애니메이션 허용
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export default function AppSelectScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams();
-  const selectedAppsParam = params.selectedApps ? JSON.parse(params.selectedApps as string) : [];
-
+  const [appsByCategory, setAppsByCategory] = useState<any[]>([]);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [selectedApps, setSelectedApps] = useState<string[]>([]);
 
-  // 초기 로드: 파라미터가 있으면 우선 사용, 없으면 AsyncStorage에서 로드
   useEffect(() => {
-    const load = async () => {
-      if (Array.isArray(selectedAppsParam) && selectedAppsParam.length > 0) {
-        setSelectedApps(selectedAppsParam);
-        return;
+    (async () => {
+      try {
+        const installedApps = await BlockedApps.getInstalledApps();
+        // category 기준으로 그룹화
+        const grouped = installedApps.reduce((acc: any, app: any) => {
+          const category = app.category || "기타";
+          if (!acc[category]) acc[category] = [];
+          acc[category].push(app);
+          return acc;
+        }, {});
+
+        const sections = Object.keys(grouped).map(key => ({
+          title: key,
+          data: grouped[key]
+        }));
+
+        setAppsByCategory(sections);
+        setCollapsed(Object.fromEntries(sections.map(s => [s.title, false])));
+
+        const saved = await AsyncStorage.getItem("blockedApps");
+        if (saved) setSelectedApps(JSON.parse(saved));
+      } catch (e) {
+        console.warn("앱 목록 로드 실패:", e);
       }
-      const saved = await AsyncStorage.getItem("blockedApps");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) setSelectedApps(parsed as string[]);
-        } catch {
-          // ignore JSON parse error
-        }
-      }
-    };
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    })();
   }, []);
 
-  const toggleApp = (id: string) => {
-    if (selectedApps.includes(id)) {
-      setSelectedApps(selectedApps.filter(app => app !== id));
-    } else {
-      setSelectedApps([...selectedApps, id]);
-    }
+  const toggleApp = (pkg: string) => {
+    setSelectedApps(prev =>
+      prev.includes(pkg) ? prev.filter(p => p !== pkg) : [...prev, pkg]
+    );
+  };
+
+  const toggleCategory = (title: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCollapsed(prev => ({ ...prev, [title]: !prev[title] }));
   };
 
   const onSave = async () => {
     await AsyncStorage.setItem("blockedApps", JSON.stringify(selectedApps));
+    await BlockedApps.setBlockedApps(selectedApps);
     router.back();
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F9FAFB" }}>
+      {/* 상단 헤더 */}
       <View style={styles.header}>
-        <Text style={styles.title}>차단할 앱 선택</Text>
+        <Text style={styles.title}>차단 목록</Text>
         <TouchableOpacity onPress={onSave}>
-          <Text style={styles.save}>저장</Text>
+          <Text style={styles.save}>저장하기</Text>
         </TouchableOpacity>
       </View>
-      <FlatList
-        data={MOCK_APPS}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.item} onPress={() => toggleApp(item.id)}>
-            <Text style={styles.itemText}>{item.name}</Text>
-            {selectedApps.includes(item.id) && <Ionicons name="checkmark" size={20} color="#2563EB" />}
+
+      {/* 카테고리별 앱 리스트 */}
+      <SectionList
+        sections={appsByCategory}
+        keyExtractor={item => item.packageName}
+        renderSectionHeader={({ section }) => (
+          <TouchableOpacity
+            style={styles.sectionHeader}
+            onPress={() => toggleCategory(section.title)}
+          >
+            <View style={styles.sectionLeft}>
+              <Ionicons
+                name={collapsed[section.title] ? "chevron-down" : "chevron-up"}
+                size={18}
+                color="#6B7280"
+              />
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+            </View>
+            <Ionicons
+              name="checkmark-circle-outline"
+              size={20}
+              color="#9CA3AF"
+            />
           </TouchableOpacity>
         )}
+        renderItem={({ item, section }) =>
+          !collapsed[section.title] ? (
+            <TouchableOpacity
+              style={styles.appItem}
+              onPress={() => toggleApp(item.packageName)}
+            >
+              <Text style={styles.appName}>{item.appName}</Text>
+              {selectedApps.includes(item.packageName) && (
+                <Ionicons name="checkmark" size={20} color="#2563EB" />
+              )}
+            </TouchableOpacity>
+          ) : null
+        }
       />
     </SafeAreaView>
   );
@@ -77,22 +127,37 @@ export default function AppSelectScreen() {
 
 const styles = StyleSheet.create({
   header: {
-    height: 52,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    height: 56,
     paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#E5E7EB"
+    borderBottomColor: "#E5E7EB",
+    backgroundColor: "#fff"
   },
-  title: { fontSize: 16, fontWeight: "700" },
-  save: { fontSize: 15, fontWeight: "600", color: "#2563EB" },
-  item: {
+  title: { fontSize: 18, fontWeight: "700", color: "#111827" },
+  save: { fontSize: 16, fontWeight: "600", color: "#2563EB" },
+  sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    padding: 16,
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#F3F4F6",
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#E5E7EB"
   },
-  itemText: { fontSize: 15 }
+  sectionLeft: { flexDirection: "row", alignItems: "center" },
+  sectionTitle: { marginLeft: 8, fontSize: 15, fontWeight: "600", color: "#111827" },
+  appItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: "#fff",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#E5E7EB"
+  },
+  appName: { fontSize: 14, color: "#374151" }
 });
