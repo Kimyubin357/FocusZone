@@ -2,7 +2,13 @@ package com.focuszone.lock
 
 import android.content.pm.PackageManager
 import android.content.pm.ApplicationInfo
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.util.Base64
 import com.facebook.react.bridge.*
+import java.io.ByteArrayOutputStream
 
 object BlockedAppsHolder {
     var blockedApps: List<String> = emptyList() // 차단 앱 패키지명 저장 리스트
@@ -70,6 +76,15 @@ class BlockedAppsModule(reactContext: ReactApplicationContext) :
                 appMap.putString("packageName", appInfo.packageName)
                 appMap.putString("appName", pm.getApplicationLabel(appInfo).toString())
 
+                // 아이콘을 Base64로 변환하여 추가
+                try {
+                    val icon = pm.getApplicationIcon(appInfo.packageName)
+                    val iconBase64 = drawableToBase64(icon)
+                    appMap.putString("icon", iconBase64)
+                } catch (e: Exception) {
+                    appMap.putString("icon", "") // 아이콘 로드 실패 시 빈 문자열
+                }
+
             
                 val category = when (appInfo.category) {
                     ApplicationInfo.CATEGORY_GAME -> "Game"
@@ -89,5 +104,31 @@ class BlockedAppsModule(reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             promise.reject("GET_INSTALLED_APPS_ERROR", "Failed to get installed apps: ${e.message}", e)
         }
+    }
+
+    // Drawable을 Base64로 변환
+    private fun drawableToBase64(drawable: Drawable): String {
+        val bitmap = drawableToBitmap(drawable)
+        val outputStream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+        val byteArray = outputStream.toByteArray()
+        return Base64.encodeToString(byteArray, Base64.NO_WRAP)
+    }
+
+    // Drawable을 Bitmap으로 변환
+    private fun drawableToBitmap(drawable: Drawable): Bitmap {
+        if (drawable is BitmapDrawable) {
+            return drawable.bitmap
+        }
+
+        val bitmap = Bitmap.createBitmap(
+            drawable.intrinsicWidth,
+            drawable.intrinsicHeight,
+            Bitmap.Config.ARGB_8888
+        )
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        return bitmap
     }
 }

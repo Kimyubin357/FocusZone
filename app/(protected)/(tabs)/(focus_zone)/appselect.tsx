@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
+  Image,
   LayoutAnimation,
   NativeModules,
   Platform,
@@ -113,7 +114,19 @@ export default function AppSelectScreen() {
               style={styles.appItem}
               onPress={() => toggleApp(item.packageName)}
             >
-              <Text style={styles.appName}>{item.appName}</Text>
+              <View style={styles.appItemLeft}>
+                {item.icon ? (
+                  <Image
+                    source={{ uri: `data:image/png;base64,${item.icon}` }}
+                    style={styles.appIcon}
+                  />
+                ) : (
+                  <View style={styles.appIconPlaceholder}>
+                    <Ionicons name="apps" size={20} color="#9CA3AF" />
+                  </View>
+                )}
+                <Text style={styles.appName}>{item.appName}</Text>
+              </View>
               {selectedApps.includes(item.packageName) && (
                 <Ionicons name="checkmark" size={20} color="#2563EB" />
               )}
@@ -153,11 +166,32 @@ const styles = StyleSheet.create({
   appItem: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 10,
     backgroundColor: "#fff",
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#E5E7EB"
   },
-  appName: { fontSize: 14, color: "#374151" }
+  appItemLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1
+  },
+  appIcon: {
+    width: 40,
+    height: 40,
+    marginRight: 12,
+    borderRadius: 8
+  },
+  appIconPlaceholder: {
+    width: 40,
+    height: 40,
+    marginRight: 12,
+    borderRadius: 8,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  appName: { fontSize: 14, color: "#374151", flex: 1 }
 });
