@@ -1,21 +1,24 @@
 // app/(protected)/(tabs)/(group_zone)/group_zone.tsx
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard"; // [추가] 클립보드 기능
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   collection,
+  collectionGroup, // 이거 뭐하는 거야?
   deleteDoc,
   doc,
-  getDoc,
+  documentId,
   getDocs,
   query,
-  where,
+  where
 } from "firebase/firestore";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
-  FlatList,
+  FlatList, // [추가]
   Modal,
   Pressable,
   StyleSheet,
@@ -29,12 +32,13 @@ import { auth, db } from "../../../../firebaseConfig";
 // ---- 타입
 type GroupItem = {
   id: string;
-  locationName: string;
+  groupName: string;
   address: string;
   ownerName?: string;
-  memberIds?: string[];
-  memberAvatars?: string[];
+  memberIds?: string[]; 
+  memberAvatars?: string[]; // 얼굴 이미지
   activeDays?: number[]; // [0~6] = 일~토
+  inviteCode?: string; // [추가] 초대 코드
 };
 
 // 요일 라벨
@@ -70,53 +74,56 @@ export default function GroupZone() {
     return unsub;
   }, []);
 
+  // [수정] 내가 멤버인 모든 그룹을 불러오는 최적화된 로직
   const load = async (uid: string) => {
     try {
       setLoading(true);
+      const membersColGroupRef = collectionGroup(db, "members");
+      const memberQuery = query(membersColGroupRef, where("uid", "==", uid));
+      const memberDocsSnap = await getDocs(memberQuery);
 
-      // 0) 내 닉네임 1회 조회 (users/{uid})
-      let myNickname = "알 수 없음";
-      try {
-        const meSnap = await getDoc(doc(db, "users", uid));
-        if (meSnap.exists()) {
-          const u = meSnap.data() as any;
-          myNickname =
-            u?.nickname ??
-            auth.currentUser?.displayName ??
-            auth.currentUser?.email?.split("@")[0] ??
-            "알 수 없음";
-        } else {
-          myNickname =
-            auth.currentUser?.displayName ??
-            auth.currentUser?.email?.split("@")[0] ??
-            "알 수 없음";
-        }
-      } catch (e) {
-        // 프로필 조회 실패 시 displayName/email 로 폴백
-        myNickname =
-          auth.currentUser?.displayName ??
-          auth.currentUser?.email?.split("@")[0] ??
-          "알 수 없음";
+      if (memberDocsSnap.empty) {
+        setList([]);
+        return;
+      }
+      const myGroupIds = memberDocsSnap.docs.map(
+        (doc) => doc.ref.parent.parent!.id
+      );
+
+      const groupsColRef = collection(db, "groupLocations");
+      const groupsQuery = query(
+        groupsColRef,
+        where(documentId(), "in", myGroupIds)
+      );
+      const groupsSnap = await getDocs(groupsQuery);
+
+      const creatorIds = [
+        ...new Set(groupsSnap.docs.map((d) => d.data().creatorId as string)),
+      ];
+      let creatorsMap = new Map<string, string>();
+      if (creatorIds.length > 0) {
+        const usersQuery = query(
+          collection(db, "users"),
+          where(documentId(), "in", creatorIds)
+        );
+        const usersSnap = await getDocs(usersQuery);
+        usersSnap.forEach((doc) => {
+          creatorsMap.set(doc.id, doc.data().displayName ?? "그룹장");
+        });
       }
 
-      // 1) 내 그룹장소 가져오기
-      const colRef = collection(db, "groupLocations");
-      const qy = query(colRef, where("userId", "==", uid));
-      const snap = await getDocs(qy);
-      const rows: GroupItem[] = snap.docs.map((d) => {
-        const data: any = d.data();
+      const rows: GroupItem[] = groupsSnap.docs.map((doc) => {
+        const data = doc.data();
         return {
-          id: d.id,
-          locationName: data.locationName ?? "그룹장소명",
+          id: doc.id,
+          groupName: data.groupName ?? "그룹장소명",
           address: data.address ?? "",
-          // 문서에 ownerName/owner 가 없으면 → 내 닉네임으로 표기
-          ownerName: data.ownerName ?? data.owner ?? myNickname,
-          memberIds: data.memberIds ?? [],
-          memberAvatars: data.memberAvatars ?? [],
+          ownerName: creatorsMap.get(data.creatorId) ?? "알 수 없음",
+          memberCount: data.memberCount ?? 0,
           activeDays: data.activeDays ?? [],
+          inviteCode: data.inviteCode, // [추가] 초대 코드 불러오기
         };
       });
-
       setList(rows);
     } finally {
       setLoading(false);
@@ -146,8 +153,20 @@ export default function GroupZone() {
     closeMenu();
   };
 
-  const onShare = () => {
-    // 공유 로직 연결 지점(딥링크/초대코드 등)
+  // [수정] 공유하기 기능 구현
+  const onShare = async () => {
+    if (!menuForId) return;
+    const group = list.find((item) => item.id === menuForId);
+    if (!group || !group.inviteCode) {
+      Alert.alert("오류", "초대 코드를 찾을 수 없습니다.");
+      closeMenu();
+      return;
+    }
+
+    // myapp://join?code=초대코드 형식의 딥링크 생성
+    const deepLink = `focuszone://join?code=${group.inviteCode}`;
+    await Clipboard.setStringAsync(deepLink);
+    Alert.alert("초대 링크 복사 완료", "친구에게 링크를 공유해보세요!");
     closeMenu();
   };
 
@@ -287,7 +306,7 @@ function GroupCard({
       {/* 상단: 제목 + 메뉴 */}
       <View style={styles.rowBetween}>
         <Text style={styles.cardTitle} numberOfLines={1}>
-          {item.locationName || "그룹장소명"}
+          {item.groupName || "그룹장소명"}
         </Text>
         <TouchableOpacity
           ref={menuBtnRef as any}

@@ -2,12 +2,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
-  addDoc,
   collection,
   doc,
   getDoc,
+  getDocs,
+  query,
   serverTimestamp,
   updateDoc,
+  where,
+  writeBatch
 } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
@@ -25,6 +28,15 @@ import { auth, db } from "../../../../firebaseConfig";
 
 const DAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
+// [추가] 7자리의 랜덤 초대 코드를 생성하는 헬퍼 함수
+const generateInviteCode = (length = 7) => {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+};
 export default function AddGroupPlace() {
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -34,19 +46,17 @@ export default function AddGroupPlace() {
     latitude?: string;
     longitude?: string;
     radius?: string;
-    name?: string;
+    name?: string; // 그룹 이름
   }>();
 
   const isEditMode = params.editMode === "true";
   const placeId = params.placeId;
 
   // form states
-  const [locationName, setLocationName] = useState(
-    params.name ?? "새로운 집중장소"
-  );
-  const [address, setAddress] = useState(
-    params.address ?? "51-1, 충대로13번길, 청주시"
-  );
+  // [수정] form states: locationName -> groupName
+  const [groupName, setGroupName] = useState(params.name ?? "새로운 그룹장소");
+  const [address, setAddress] = useState(params.address ?? "주소를 선택하세요");
+
   const [latitude, setLatitude] = useState<number | undefined>(
     params.latitude ? Number(params.latitude) : undefined
   );
@@ -87,7 +97,7 @@ export default function AddGroupPlace() {
         }
         if (ignore) return;
         const data = snap.data() as any;
-        setLocationName(data.locationName ?? "그룹장소");
+        setGroupName(data.locationName ?? "그룹장소");
         setAddress(data.address ?? "");
         setLatitude(
           typeof data.latitude === "number" ? data.latitude : undefined
@@ -114,37 +124,81 @@ export default function AddGroupPlace() {
   const onSave = async () => {
     const user = auth.currentUser;
     if (!user) return Alert.alert("안내", "로그인이 필요합니다.");
-    if (!locationName?.trim())
+    if (!groupName?.trim())
       return Alert.alert("안내", "그룹장소명을 입력해 주세요.");
     if (!address || address === "주소를 선택하세요")
       return Alert.alert("안내", "주소를 선택해 주세요.");
 
-    const payload = {
-      locationName: locationName.trim(),
-      address: String(address),
-      latitude: typeof latitude === "number" ? latitude : null,
-      longitude: typeof longitude === "number" ? longitude : null,
-      radius: Number(radius) || 400,
-      userId: user.uid,
-      activeDays: [...selectedDays]
-        .map((d) => Number(d))
-        .filter((d) => d >= 0 && d <= 6)
-        .sort((a, b) => a - b),
-      updatedAt: serverTimestamp(),
-    };
+    setSaving(true);
 
     try {
-      setSaving(true);
       if (isEditMode && placeId) {
-        // 업데이트
+        // --- 수정 모드 ---
+        const payload = {
+          groupName: groupName.trim(), // locationName -> groupName
+          address,
+          latitude: latitude ?? null,
+          longitude: longitude ?? null,
+          radius: Number(radius) || 400,
+          activeDays: selectedDays.sort((a, b) => a - b),
+          updatedAt: serverTimestamp(),
+        };
         await updateDoc(doc(db, "groupLocations", placeId), payload);
       } else {
-        // 생성
-        await addDoc(collection(db, "groupLocations"), {
-          ...payload,
+        // --- 생성 모드 ---
+        // 1. [추가] 유니크한 초대 코드 생성 (중복될 경우 재생성)
+        let inviteCode = "";
+        let isCodeUnique = false;
+        const groupLocationsRef = collection(db, "groupLocations");
+        while (!isCodeUnique) {
+          inviteCode = generateInviteCode();
+          const q = query(groupLocationsRef, where("inviteCode", "==", inviteCode));
+          const snapshot = await getDocs(q);
+          if (snapshot.empty) {
+            isCodeUnique = true;
+          }
+        }
+
+        // 2. [추가] 트랜잭션을 위한 Batch 생성
+        const batch = writeBatch(db);
+
+        // 3. [추가] 생성할 그룹 문서 참조 (ID를 미리 생성)
+        const newGroupRef = doc(groupLocationsRef);
+
+        // 4. [추가] 그룹 문서에 저장할 데이터 (Payload)
+        const newGroupPayload = {
+          groupName: groupName.trim(),
+          address,
+          latitude: latitude ?? null,
+          longitude: longitude ?? null,
+          radius: Number(radius) || 400,
+          activeDays: selectedDays.sort((a, b) => a - b),
+          creatorId: user.uid, // userId -> creatorId
+          inviteCode: inviteCode, // 생성된 초대 코드
+          memberCount: 1, // 생성 시 멤버는 1명(본인)
+          presentMemberCount: 0,
           createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+        batch.set(newGroupRef, newGroupPayload);
+
+        // 5. [추가] 'members' 서브 컬렉션에 그룹장 정보 저장
+        const memberRef = doc(db, "groupLocations", newGroupRef.id, "members", user.uid);
+        // (선택) user 프로필에서 displayName 가져오기
+        const userProfileSnap = await getDoc(doc(db, "users", user.uid));
+        const displayName = userProfileSnap.data()?.displayName ?? user.displayName ?? "그룹장";
+
+        batch.set(memberRef, {
+          role: "owner",
+          uid: user.uid,
+          displayName: displayName,
+          joinedAt: serverTimestamp(),
         });
+
+        // 6. [추가] Batch 작업 한번에 실행
+        await batch.commit();
       }
+
       Alert.alert("완료", isEditMode ? "수정되었습니다." : "등록되었습니다.", [
         {
           text: "확인",
@@ -155,6 +209,7 @@ export default function AddGroupPlace() {
         },
       ]);
     } catch (e: any) {
+      console.error("저장 중 에러 발생:", e);
       Alert.alert("에러", String(e?.message ?? e));
     } finally {
       setSaving(false);
@@ -172,7 +227,7 @@ export default function AddGroupPlace() {
       Object.assign(mapParams, {
         editMode: "true",
         placeId,
-        locationName,
+        groupName,
       });
     }
     router.replace({
@@ -222,8 +277,8 @@ export default function AddGroupPlace() {
             <TextInput
               style={styles.input}
               placeholder="예) 도서관, 스터디카페"
-              value={locationName}
-              onChangeText={setLocationName}
+              value={groupName}
+              onChangeText={setGroupName}
             />
           </View>
 
