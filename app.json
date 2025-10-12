@@ -22,7 +22,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.focuszone.app"
+      "package": "com.focuszone"
     },
     "web": {
       "bundler": "metro",

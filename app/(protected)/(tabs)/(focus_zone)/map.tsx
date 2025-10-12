@@ -106,19 +106,43 @@ export default function KakaoMapScreen() {
   const mapRef = useRef<MapView>(null); //지도 움직 이는 용도
 
   // 3-2) STATE: 지도/선택/표시/검색
+  const parseNumber = (v: any): number | null => {
+    if (v === null || v === undefined) return null;
+    const s = String(v).trim();
+    if (s === "" || s.toLowerCase() === "undefined" || s.toLowerCase() === "null") return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const initialLat = parseNumber(params.latitude) ?? 37.5665;
+  const initialLng = parseNumber(params.longitude) ?? 126.978;
+
   const [region, setRegion] = useState<Region>({
     // 초기 지도 위치
-    latitude: params.latitude ? Number(params.latitude) : 37.5665,
-    longitude: params.longitude ? Number(params.longitude) : 126.978,
+    latitude: initialLat,
+    longitude: initialLng,
     latitudeDelta: 0.004, // 확대 수준
     longitudeDelta: 0.004,
   });
 
   const [selectedLocation, setSelectedLocation] = useState({
     // 선택된 위치
-    latitude: params.latitude ? Number(params.latitude) : 37.5665,
-    longitude: params.longitude ? Number(params.longitude) : 126.978,
+    latitude: initialLat,
+    longitude: initialLng,
   });
+
+  const isValidCoord = (lat: any, lng: any) =>
+    Number.isFinite(lat) && Number.isFinite(lng);
+
+  const handleRegionChangeComplete = (next: Region) => {
+    if (
+      isValidCoord(next.latitude, next.longitude) &&
+      Number.isFinite(next.latitudeDelta) &&
+      Number.isFinite(next.longitudeDelta)
+    ) {
+      setRegion(next);
+    }
+  };
 
   const [radius, setRadius] = useState(
     // 반경
@@ -386,18 +410,20 @@ export default function KakaoMapScreen() {
         style={{ flex: 1 }}
         provider={PROVIDER_GOOGLE}
         region={region}
-        onRegionChangeComplete={setRegion}
+        onRegionChangeComplete={handleRegionChangeComplete}
         onPress={onMapPress}
         mapType="standard"
       >
         {/* 선택 영역(원) */}
-        <Circle
-          center={selectedLocation}
-          radius={radius}
-          strokeWidth={2}
-          strokeColor="#75B8FA"
-          fillColor="rgba(117,184,250,0.25)"
-        />
+        {isValidCoord(selectedLocation.latitude, selectedLocation.longitude) && (
+            <Circle
+              center={selectedLocation}
+              radius={radius}
+              strokeWidth={2}
+              strokeColor="#75B8FA"
+              fillColor="rgba(117,184,250,0.25)"
+            />
+          )}
       </MapView>
 
       {/* 검색 결과 리스트 */}
