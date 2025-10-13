@@ -12,17 +12,15 @@ import {
   FlatList,
   Keyboard,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import MapView, {
   Circle,
-  MapPressEvent,
-  PROVIDER_GOOGLE,
-  Region,
+  MapPressEvent, Marker, PROVIDER_GOOGLE,
+  Region
 } from "react-native-maps";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -30,9 +28,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 // 1) CONSTANTS / TYPES
 // ──────────────────────────────────────────────────────────────────────────────
 // ⚠️ 실제에선 .env 등으로 키 숨겨서 import 하세요
-const KAKAO_REST_API_KEY = "f1debfd3567cd9e9d3cc99c5c41c2b7c";
+// EXPO_PUBLIC_GOOGLE_MAPS_API_KEY 사용 권장
 
-type KakaoSearchPlace = {
+// const GOOGLE_MAP_API_KEY = "AIzaSyA97bCCeZh4eR_q2fJAjm5i55YqyVdJZ6g";
+const GOOGLE_WEB_API_KEY = "AIzaSyAvid2EBP0GgrNfzKcF7goUZlQWNbrbF94";
+type SearchPlace = {
   id: string;
   place_name: string;
   x: string; // lng
@@ -40,7 +40,17 @@ type KakaoSearchPlace = {
   road_address_name?: string;
   address_name?: string;
 };
-
+type GooglePlace = {
+  place_id: string;
+  name: string;
+  formatted_address: string;
+  geometry: {
+    location: {
+      lat: number;
+      lng: number;
+    };
+  };
+}
 // ──────────────────────────────────────────────────────────────────────────────
 // 2) PURE UTILS (좌표 변환 / Kakao API 호출 / 스냅)
 //    - 컴포넌트 바깥에 두어 재생성 방지 & 가독성 ↑
@@ -51,16 +61,27 @@ const metersToLngDelta = (m: number, lat: number) =>
   m / (111320 * Math.cos((lat * Math.PI) / 180));
 
 /** 좌표 → 도로명 주소만 (없으면 null) */
-// <카카오 REST API 사용을 하여 도로명 주소를 가져옴>
+// Google Geocoding API 사용
 async function getRoadAddressFromCoords(latitude: number, longitude: number) {
   try {
     const res = await fetch(
-      `https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${longitude}&y=${latitude}&input_coord=WGS84`,
-      { headers: { Authorization: `KakaoAK ${KAKAO_REST_API_KEY}` } }
+      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&language=ko&key=${GOOGLE_WEB_API_KEY}`
     );
     const data = await res.json();
-    const doc = data?.documents?.[0];
-    return doc?.road_address?.address_name ?? null;
+    const first = data?.results?.[0];
+        if (!first) return null;
+
+    // 주소 컴포넌트에서 필요한 부분만 추출
+    const comps = first.address_components || [];
+    const sido = comps.find(c => c.types.includes("administrative_area_level_1"))?.long_name || "";
+    const sigungu = comps.find(c => c.types.includes("locality"))?.long_name || "";
+    const gu = comps.find(c => c.types.includes("sublocality_level_1"))?.long_name || "";
+    const road = comps.find(c => c.types.includes("route"))?.long_name || "";
+    const building = comps.find(c => c.types.includes("premise"))?.long_name || "";
+
+    // 조합
+    const simpleAddress = [sido, sigungu, gu, road, building].filter(Boolean).join(" ");
+    return simpleAddress || first.formatted_address || null;
   } catch (e) {
     console.error("도로명 역지오코딩 실패:", e);
     return null;
@@ -98,7 +119,7 @@ async function findNearestRoadAddress(
 // ──────────────────────────────────────────────────────────────────────────────
 /** 3) COMPONENT */
 // ──────────────────────────────────────────────────────────────────────────────
-// <구글지도를 사용하지만 카카오 API로 주소 검색 및 도로명 스냅핑 기능을 구현>
+// <구글지도를 사용하며 Google Places/Geocoding으로 검색 및 역지오코딩>
 export default function KakaoMapScreen() {
   // 3-1) NAV / REFS / PARAMS
   const router = useRouter();
@@ -106,19 +127,45 @@ export default function KakaoMapScreen() {
   const mapRef = useRef<MapView>(null); //지도 움직 이는 용도
 
   // 3-2) STATE: 지도/선택/표시/검색
+  const parseNumber = (v: any): number | null => {
+    if (v === null || v === undefined) return null;
+    const s = String(v).trim();
+    if (s === "" || s.toLowerCase() === "undefined" || s.toLowerCase() === "null") return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const initialLat = parseNumber(params.latitude) ?? 37.5665;
+  const initialLng = parseNumber(params.longitude) ?? 126.978;
+
   const [region, setRegion] = useState<Region>({
     // 초기 지도 위치
-    latitude: params.latitude ? Number(params.latitude) : 37.5665,
-    longitude: params.longitude ? Number(params.longitude) : 126.978,
+    latitude: initialLat,
+    longitude: initialLng,
     latitudeDelta: 0.004, // 확대 수준
     longitudeDelta: 0.004,
   });
 
+
   const [selectedLocation, setSelectedLocation] = useState({
     // 선택된 위치
-    latitude: params.latitude ? Number(params.latitude) : 37.5665,
-    longitude: params.longitude ? Number(params.longitude) : 126.978,
+    latitude: initialLat,
+    longitude: initialLng,
   });
+
+
+  const isValidCoord = (lat: any, lng: any) =>
+    Number.isFinite(lat) && Number.isFinite(lng);
+
+  const handleRegionChangeComplete = (next: Region) => {
+    if (
+      isValidCoord(next.latitude, next.longitude) &&
+      Number.isFinite(next.latitudeDelta) &&
+      Number.isFinite(next.longitudeDelta)
+    ) {
+      setRegion(next);
+    }
+  };
 
   const [radius, setRadius] = useState(
     // 반경
@@ -132,7 +179,7 @@ export default function KakaoMapScreen() {
   // 검색 상태
   const [query, setQuery] = useState(""); // 검색어
   const [searching, setSearching] = useState(false); // 검색 중인지 확인
-  const [results, setResults] = useState<KakaoSearchPlace[]>([]); // 검색 결과
+  const [results, setResults] = useState<SearchPlace[]>([]); // 검색 결과
   const [showResults, setShowResults] = useState(false); // 결과 표시 여부
 
   // 3-3) OPTIONS
@@ -253,7 +300,7 @@ export default function KakaoMapScreen() {
     }
   };
 
-  /** 카카오: 장소명/주소 검색 */
+  /** Google Places: 장소명/주소 검색 (Text Search) */
   const searchPlaces = async () => {
     const q = query.trim();
     if (!q) {
@@ -264,42 +311,32 @@ export default function KakaoMapScreen() {
     try {
       setSearching(true);
 
-      // 1) 키워드(POI) 검색
-      const poiRes = await fetch(
-        `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(
-          q
-        )}&size=10`,
-        { headers: { Authorization: `KakaoAK ${KAKAO_REST_API_KEY}` } }
-      );
-      const poiJson = await poiRes.json();
-      const poiDocs: KakaoSearchPlace[] = poiJson?.documents ?? [];
+      const lat = region.latitude;
+      const lng = region.longitude;
+      const radius = 1500;
 
-      // 2) 주소(도로명/지번) 검색
-      const addrRes = await fetch(
-        `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(
-          q
-        )}&size=10`,
-        { headers: { Authorization: `KakaoAK ${KAKAO_REST_API_KEY}` } }
-      );
-      const addrJson = await addrRes.json();
-      const addrDocsRaw = addrJson?.documents ?? [];
-      const addrDocs: KakaoSearchPlace[] = addrDocsRaw.map(
-        (d: any, idx: number) => ({
-          id:
-            `addr-${idx}-` +
-            (d.road_address?.address_name ??
-              d.address?.address_name ??
-              String(idx)),
-          place_name:
-            d.road_address?.address_name ?? d.address?.address_name ?? "주소",
-          x: d.x ?? d.address?.x ?? d.road_address?.x, // lng
-          y: d.y ?? d.address?.y ?? d.road_address?.y, // lat
-          address_name: d.address?.address_name,
-          road_address_name: d.road_address?.address_name,
-        })
-      );
+      const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&keyword=${encodeURIComponent(
+        q
+      )}&language=ko&region=KR&key=${GOOGLE_WEB_API_KEY}`;
 
-      setResults([...poiDocs, ...addrDocs]);
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.status !== "OK") {
+        console.error("검색 실패:", json.status, json.error_message);
+        Alert.alert("오류", "검색에 실패했습니다.");
+      return;
+      }
+
+      const mapped: SearchPlace[] = json.results.map((p: any) => ({
+        id: p.place_id,
+        place_name: p.name,
+        x: String(p.geometry?.location?.lng ?? 0),
+        y: String(p.geometry?.location?.lat ?? 0),
+        road_address_name: p.vicinity,
+        address_name: p.vicinity,
+      }));
+
+      setResults(mapped);
       setShowResults(true);
       Keyboard.dismiss();
     } catch (err) {
@@ -311,7 +348,7 @@ export default function KakaoMapScreen() {
   };
 
   /** 검색 결과 선택 → 좌표로 확정(도로명만) */
-  const selectResult = async (item: KakaoSearchPlace) => {
+  const selectResult = async (item: SearchPlace) => {
     const lat = Number(item.y);
     const lng = Number(item.x);
     const ok = await applyAddressByCoords(lat, lng);
@@ -383,21 +420,37 @@ export default function KakaoMapScreen() {
       {/* 지도 */}
       <MapView
         ref={mapRef}
-        style={{ flex: 1 }}
+        style={StyleSheet.absoluteFillObject}
         provider={PROVIDER_GOOGLE}
         region={region}
-        onRegionChangeComplete={setRegion}
+        onRegionChangeComplete={handleRegionChangeComplete}
         onPress={onMapPress}
         mapType="standard"
+        showsUserLocation={true}
+        showsMyLocationButton={false}
+        userLocationAnnotationTitle="내 위치"
+        userLocationPriority="high"
+        followsUserLocation={true}
       >
         {/* 선택 영역(원) */}
-        <Circle
-          center={selectedLocation}
-          radius={radius}
-          strokeWidth={2}
-          strokeColor="#75B8FA"
-          fillColor="rgba(117,184,250,0.25)"
-        />
+        {isValidCoord(selectedLocation.latitude, selectedLocation.longitude) && (
+          <>
+            <Circle
+              center={selectedLocation}
+              radius={radius}
+              strokeWidth={2}
+              strokeColor="#75B8FA"
+              fillColor="rgba(117,184,250,0.25)"
+            />
+            <Marker
+              coordinate={selectedLocation}
+              title="선택 위치"
+              description={address || "도로명 주소 없음"}
+              pinColor="#2E82FF"
+            >
+            </Marker>
+          </>
+        )}
       </MapView>
 
       {/* 검색 결과 리스트 */}
@@ -460,11 +513,6 @@ export default function KakaoMapScreen() {
           value={radius}
           onValueChange={handleSliderChange}
         />
-
-        <View style={styles.row}>
-          <Text style={styles.label}>역 반지름</Text>
-          <Switch value={reverse} onValueChange={setReverse} />
-        </View>
 
         <TouchableOpacity style={styles.button} onPress={handleContinue}>
           <Text style={styles.buttonText}>계속하기</Text>

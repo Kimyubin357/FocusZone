@@ -38,10 +38,10 @@ export default function AddFocusPlace() {
     params.longitude ? Number(params.longitude) : undefined
   );
   const [radius, setRadius] = useState<number>(
-    params.radius ? Number(params.radius) : 400 // ← 기존 기본값
+    params.radius ? Number(params.radius) : (isEditMode ? 100 : 100) // 둘 다 100
   );
 
-  const appsBlockedCount = 0;
+  const [appsBlockedCount, setAppsBlockedCount] = useState(0);
 
   // ✅ 포커스될 때 지도에서 저장해 둔 임시값(draft) 반영
   useFocusEffect(
@@ -59,6 +59,16 @@ export default function AddFocusPlace() {
           if (typeof draft.longitude === "number")
             setLongitude(draft.longitude);
           if (typeof draft.radius === "number") setRadius(draft.radius);
+          // 차단된 앱 수 불러오기
+          try {
+            const blocked = await AsyncStorage.getItem("blockedApps");
+            if (blocked && isActive) {
+              const list = JSON.parse(blocked);
+              setAppsBlockedCount(Array.isArray(list) ? list.length : 0);
+            } else if (isActive) {
+              setAppsBlockedCount(0);
+            }
+          } catch {}
         } catch (e) {
           // 무시
         }
@@ -206,7 +216,11 @@ export default function AddFocusPlace() {
 
         <View style={styles.card}>
           <Text style={styles.label}>차단할 앱</Text>
-          <TouchableOpacity style={styles.rowBtn} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.rowBtn}
+            activeOpacity={0.8}
+            onPress={() => router.push("/(protected)/(tabs)/(focus_zone)/appselect")}
+          >
             <Ionicons name="grid-outline" size={18} color="#2563EB" />
             <Text style={styles.rowBtnText}>
               앱 목록{" "}

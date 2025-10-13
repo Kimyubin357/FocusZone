@@ -58,6 +58,10 @@ export default function FocusZoneScreen() {
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
   const [showAllPlaces, setShowAllPlaces] = useState(false);
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null); // 추가
 
   // 지도 카메라 상태(초기값: 서울 시청)
   const [region, setRegion] = useState<Region>({
@@ -87,6 +91,33 @@ export default function FocusZoneScreen() {
     }
     // "전체 보기" 모드: 카메라 고정(요구사항대로)
   }, [places, showAllPlaces]);
+
+  // 앱 시작 시 현재 위치 가져오기
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === "granted") {
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          setUserLocation({
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+          });
+          // 초기 카메라 위치를 현재 위치로 설정
+          setRegion({
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            latitudeDelta: 0.008,
+            longitudeDelta: 0.008,
+          });
+        }
+      } catch (e) {
+        console.error("현재 위치 가져오기 실패:", e);
+      }
+    })();
+  }, []);
 
   // ───────────────────────────────────────────────────────────────────────────
   // 5) HELPERS
@@ -162,6 +193,11 @@ export default function FocusZoneScreen() {
       }
       const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
+      });
+      // 상태 업데이트
+      setUserLocation({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
       });
       animateTo(loc.coords.latitude, loc.coords.longitude);
     } catch (e) {
@@ -297,11 +333,18 @@ export default function FocusZoneScreen() {
       {/* 지도 (Google) */}
       <MapView
         ref={mapRef}
+        mapType="standard"
         style={{ flex: 1 }}
         provider={PROVIDER_GOOGLE}
         region={region}
         onRegionChangeComplete={setRegion}
+        showsUserLocation={true}
+        showsMyLocationButton={false}
+        userLocationAnnotationTitle="내 위치"
+        userLocationPriority="high"
+        followsUserLocation={false} // true로 하면 자동으로 따라감
       >
+        {/* 집중장소 원들 */}
         {displayPlaces.map((p) => (
           <Circle
             key={p.id}
@@ -314,6 +357,17 @@ export default function FocusZoneScreen() {
             }
           />
         ))}
+        
+        {/* 현재 위치 마커 (선택사항: 더 명확하게 표시하고 싶을 때) */}
+        {userLocation && (
+          <Circle
+            center={userLocation}
+            radius={10}
+            strokeWidth={3}
+            strokeColor="#2E82FF"
+            fillColor="rgba(46, 130, 255, 0.3)"
+          />
+        )}
       </MapView>
 
       {/* 전체 보기 토글 */}
