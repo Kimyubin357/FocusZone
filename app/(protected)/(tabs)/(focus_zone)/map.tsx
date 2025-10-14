@@ -423,7 +423,6 @@ export default function KakaoMapScreen() {
         style={StyleSheet.absoluteFillObject}
         provider={PROVIDER_GOOGLE}
         region={region}
-        onRegionChangeComplete={handleRegionChangeComplete}
         onPress={onMapPress}
         mapType="standard"
         showsUserLocation={true}
@@ -446,8 +445,11 @@ export default function KakaoMapScreen() {
               coordinate={selectedLocation}
               title="선택 위치"
               description={address || "도로명 주소 없음"}
-              pinColor="#2E82FF"
+              anchor={{ x: 0.5, y: 0.5 }}
             >
+              <View style={styles.simpleMarker}>
+                <Ionicons name="pin" size={27} color="#2E82FF" />
+              </View>
             </Marker>
           </>
         )}
@@ -488,7 +490,7 @@ export default function KakaoMapScreen() {
         onPress={getCurrentLocation}
         activeOpacity={0.8}
       >
-        <Ionicons name="locate" size={25} color="#2E82FF" />
+        <Ionicons name="navigate-outline" size={22} color="#000" />
       </TouchableOpacity>
 
       {/* 하단 패널 */}
@@ -527,6 +529,12 @@ export default function KakaoMapScreen() {
 // ──────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  simpleMarker: {
+    width: 32,
+    height: 32,
+    justifyContent: "center",
+    alignItems: "center",
+  },
 
   // 검색 바
   searchBarWrap: {
@@ -587,19 +595,18 @@ const styles = StyleSheet.create({
   // 현재 위치 버튼
   locationButton: {
     position: "absolute",
-    top: 60,
+    top: 90,
     right: 16,
-    height: 50,
-    width: 50,
+    width: 46,
+    height: 46,
     backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 25,
+    borderRadius: 23,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 4,
     zIndex: 1000,
   },
 

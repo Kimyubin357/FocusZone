@@ -22,7 +22,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.focuszone.app"
+      "package": "com.focuszone"
     },
     "web": {
       "bundler": "metro",
@@ -43,6 +43,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d48355b9-9cd6-4695-b47e-84237588a1b8"
+      }
+    },
+    "owner": "yong332"
   }
 }

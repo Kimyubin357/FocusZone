@@ -337,12 +337,13 @@ export default function FocusZoneScreen() {
         style={{ flex: 1 }}
         provider={PROVIDER_GOOGLE}
         region={region}
-        onRegionChangeComplete={setRegion}
         showsUserLocation={true}
         showsMyLocationButton={false}
         userLocationAnnotationTitle="내 위치"
         userLocationPriority="high"
-        followsUserLocation={false} // true로 하면 자동으로 따라감
+        followsUserLocation={true} // true로 하면 자동으로 따라감
+        
+
       >
         {/* 집중장소 원들 */}
         {displayPlaces.map((p) => (
@@ -358,16 +359,7 @@ export default function FocusZoneScreen() {
           />
         ))}
         
-        {/* 현재 위치 마커 (선택사항: 더 명확하게 표시하고 싶을 때) */}
-        {userLocation && (
-          <Circle
-            center={userLocation}
-            radius={10}
-            strokeWidth={3}
-            strokeColor="#2E82FF"
-            fillColor="rgba(46, 130, 255, 0.3)"
-          />
-        )}
+        {/* 현재 위치 Circle 제거 */}
       </MapView>
 
       {/* 전체 보기 토글 */}
