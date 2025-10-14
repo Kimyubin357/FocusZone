@@ -7,14 +7,20 @@
     "icon": "./assets/images/icon.png",
     "scheme": "focuszone",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE"
+      ],
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyBTbK1Rj0Iq_uay8__IsuEdMRt00toi-OQ"
+          "apiKey": "AIzaSyBSGtQUJ0WUzvQ2M2-D1fKDUADUbf53rBk"
         }
       },
       "adaptiveIcon": {
@@ -23,6 +29,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.focuszone"
+      
     },
     "web": {
       "bundler": "metro",
@@ -30,6 +37,13 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "앱이 꺼져있을 때도 집중장소 인식을 위해 위치 정보를 사용합니다.",
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
       "expo-router",
       [
         "expo-splash-screen",

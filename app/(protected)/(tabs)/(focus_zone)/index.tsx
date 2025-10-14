@@ -25,18 +25,22 @@ import {
 } from "react-native";
 import MapView, { Circle, PROVIDER_GOOGLE, Region } from "react-native-maps";
 import Popover from "react-native-popover-view";
+// --- ADDED: locationService 임포트 ---
+import { startLocationTask, stopLocationTask } from "../../../../src/services/location/locationService";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2) TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 type Place = {
-  id: string;
-  name: string;
-  address: string;
-  latitude: number;
-  longitude: number;
-  radius: number;
-  selected: boolean;
+  id: string;// 집중장소 고유 아이디
+  name: string; // 집중장소 이름
+  address: string; // string 주소
+  latitude: number; // 위도
+  longitude: number; // 경도
+  radius: number; // 반경
+  isActive: boolean; // 
+  // 🔽 이 줄을 추가하면 에러가 사라집니다.
+  blockedApps?: string[]; // '?'를 붙여서 선택적 필드로 만들면 더 안전합니다.
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -57,7 +61,7 @@ export default function FocusZoneScreen() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
-  const [showAllPlaces, setShowAllPlaces] = useState(false);
+
 
   // 지도 카메라 상태(초기값: 서울 시청)
   const [region, setRegion] = useState<Region>({
@@ -76,17 +80,21 @@ export default function FocusZoneScreen() {
       loadPlaces();
     }, [])
   );
-
-  // places or showAllPlaces가 바뀔 때 카메라 이동 정책
+  // --- ADDED: places 상태 변경에 따른 백그라운드 서비스 제어 ---
   useEffect(() => {
-    // "선택 보기" 모드일 때만: 첫 번째 선택된 장소로 카메라 이동
-    const selected = places.filter((p) => p.selected);
-    if (!showAllPlaces && selected.length > 0) {
-      const first = selected[0];
-      animateTo(first.latitude, first.longitude, 0.01, 0.01);
+    // 활성화된 장소가 하나라도 있는지 확인
+    const hasActivePlace = places.some(p => p.isActive);
+
+    if (hasActivePlace) {
+      console.log("활성화된 장소가 있어 위치 추적을 시작합니다.");
+      startLocationTask();
+    } else {
+      console.log("활성화된 장소가 없어 위치 추적을 중지합니다.");
+      stopLocationTask();
     }
-    // "전체 보기" 모드: 카메라 고정(요구사항대로)
-  }, [places, showAllPlaces]);
+  }, [places]); // places 배열이 변경될 때마다 이 로직을 다시 실행
+
+  
 
   // ───────────────────────────────────────────────────────────────────────────
   // 5) HELPERS
@@ -126,25 +134,23 @@ export default function FocusZoneScreen() {
     }
   };
 
-  // 화면에 그릴 대상(전체/선택)
-  const displayPlaces = showAllPlaces
-    ? places
-    : places.filter((p) => p.selected);
+
 
   // ───────────────────────────────────────────────────────────────────────────
   // 6) HANDLERS (버튼/목록/메뉴/네비 등)
   // ───────────────────────────────────────────────────────────────────────────
-  const toggleShowAll = () => {
-    const newValue = !showAllPlaces;
-    setShowAllPlaces(newValue);
-    // 전체 보기 켜면 모두 selected=true, 끄면 모두 false
-    const updated = places.map((p) => ({ ...p, selected: newValue }));
+  // --- MODIFIED: 전체 활성화/비활성화 토글 함수로 변경 ---
+  const toggleAllActive = () => {
+    // 현재 활성화된 장소가 하나라도 있는지 확인
+    const isAnyActive = places.some(p => p.isActive);
+    // 하나라도 켜져 있으면 모두 끄고, 모두 꺼져 있으면 모두 켬
+    const updated = places.map((p) => ({ ...p, isActive: !isAnyActive }));
     savePlaces(updated);
   };
 
   const toggleSelection = (item: Place) => {
     const updated = places.map((p) =>
-      p.id === item.id ? { ...p, selected: !p.selected } : p
+      p.id === item.id ? { ...p, selected: !p.isActive } : p
     );
     savePlaces(updated);
   };
@@ -183,6 +189,7 @@ export default function FocusZoneScreen() {
         latitude: String(selectedPlace.latitude),
         longitude: String(selectedPlace.longitude),
         radius: String(selectedPlace.radius),
+        blockedApps: JSON.stringify(selectedPlace.blockedApps || []),
       },
     });
   };
@@ -213,15 +220,15 @@ export default function FocusZoneScreen() {
   const renderItem = ({ item }: { item: Place }) => (
     <View style={styles.cardContainer}>
       <TouchableOpacity
-        style={[styles.card, item.selected && styles.selectedCard]}
+        style={[styles.card, item.isActive && styles.selectedCard]}
         onPress={() => toggleSelection(item)}
         activeOpacity={0.7}
       >
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <Ionicons
-            name={item.selected ? "checkmark-circle" : "close-circle"}
+            name={item.isActive ? "checkmark-circle" : "close-circle"}
             size={22}
-            color={item.selected ? "#22C55E" : "#D1D5DB"}
+            color={item.isActive ? "#22C55E" : "#D1D5DB"}
             style={{ marginRight: 8 }}
           />
           <View style={{ flex: 1 }}>
@@ -288,7 +295,8 @@ export default function FocusZoneScreen() {
       </Text>
     </View>
   );
-
+  // --- ADDED: 버튼 텍스트와 아이콘을 동적으로 결정하기 위한 변수 ---
+  const isAnyPlaceActive = places.some(p => p.isActive);
   // ───────────────────────────────────────────────────────────────────────────
   // 8) RETURN
   // ───────────────────────────────────────────────────────────────────────────
@@ -302,33 +310,34 @@ export default function FocusZoneScreen() {
         region={region}
         onRegionChangeComplete={setRegion}
       >
-        {displayPlaces.map((p) => (
+        {/* --- MODIFIED: 항상 모든 장소를 지도에 표시 --- */}
+        {places.map((p) => (
           <Circle
             key={p.id}
             center={{ latitude: p.latitude, longitude: p.longitude }}
             radius={p.radius || 400}
             strokeWidth={2}
-            strokeColor={p.selected ? "#22C55E" : "#9CA3AF"}
+            strokeColor={p.isActive ? "#22C55E" : "#9CA3AF"}
             fillColor={
-              p.selected ? "rgba(34,197,94,0.2)" : "rgba(156,163,175,0.2)"
+              p.isActive ? "rgba(34,197,94,0.2)" : "rgba(156,163,175,0.2)"
             }
           />
         ))}
       </MapView>
 
-      {/* 전체 보기 토글 */}
+      {/* --- MODIFIED: 전체 활성화/비활성화 버튼으로 변경 --- */}
       <TouchableOpacity
         style={styles.toggleButton}
-        onPress={toggleShowAll}
+        onPress={toggleAllActive}
         activeOpacity={0.8}
       >
         <Ionicons
-          name={showAllPlaces ? "eye-off" : "eye"}
+          name={isAnyPlaceActive ? "flash-off-outline" : "flash-outline"}
           size={20}
           color="#fff"
         />
         <Text style={styles.toggleButtonText}>
-          {showAllPlaces ? "선택된 장소만" : "전체 보기"}
+          {isAnyPlaceActive ? "전체 비활성화" : "전체 활성화"}
         </Text>
       </TouchableOpacity>
 
@@ -356,7 +365,7 @@ export default function FocusZoneScreen() {
           <View style={styles.headerRow}>
             <Text style={styles.title}>집중장소</Text>
             <Text style={styles.countText}>
-              {places.filter((p) => p.selected).length}/{places.length}
+              {places.filter((p) => p.isActive).length}/{places.length}
             </Text>
           </View>
           <FlatList

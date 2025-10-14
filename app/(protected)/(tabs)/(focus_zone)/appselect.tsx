@@ -1,6 +1,6 @@
+// AppSelectScreen.tsx
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   Image,
@@ -25,16 +25,27 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 
 export default function AppSelectScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+
   const [appsByCategory, setAppsByCategory] = useState<any[]>([]);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [selectedApps, setSelectedApps] = useState<string[]>([]);
 
   useEffect(() => {
+    // 1. add.tsx에서 온 params를 사용해 초기 선택 앱을 설정합니다. (가장 먼저 실행)
+    // 수정 모드일 때: params.currentApps에 데이터가 있으므로 파싱해서 상태 설정
+    // 새 등록 모드일 때: params.currentApps가 비어있으므로 selectedApps는 기본값(빈 배열) 유지
+    if (params.currentApps && typeof params.currentApps === 'string') {
+      setSelectedApps(JSON.parse(params.currentApps));
+    }
+
     (async () => {
       try {
         const installedApps = await BlockedApps.getInstalledApps();
-        // category 기준으로 그룹화
-        const grouped = installedApps.reduce((acc: any, app: any) => {
+        const userApps = installedApps.filter((app: any) => !app.isSystem);
+
+        // 💥 중요: 필터링된 userApps 변수를 사용해야 합니다.
+        const grouped = userApps.reduce((acc: any, app: any) => {
           const category = app.category || "기타";
           if (!acc[category]) acc[category] = [];
           acc[category].push(app);
@@ -47,15 +58,17 @@ export default function AppSelectScreen() {
         }));
 
         setAppsByCategory(sections);
-        setCollapsed(Object.fromEntries(sections.map(s => [s.title, false])));
+        setCollapsed(Object.fromEntries(sections.map(s => [s.title, true])));
 
-        const saved = await AsyncStorage.getItem("blockedApps");
-        if (saved) setSelectedApps(JSON.parse(saved));
+        // 2. AsyncStorage에서 불러오는 로직은 완전히 제거합니다.
+        // const saved = await AsyncStorage.getItem("blockedApps");
+        // if (saved) setSelectedApps(JSON.parse(saved));
+
       } catch (e) {
         console.warn("앱 목록 로드 실패:", e);
       }
     })();
-  }, []);
+  }, []); // useEffect는 화면이 처음 나타날 때 한 번만 실행됩니다.
 
   const toggleApp = (pkg: string) => {
     setSelectedApps(prev =>
@@ -68,11 +81,31 @@ export default function AppSelectScreen() {
     setCollapsed(prev => ({ ...prev, [title]: !prev[title] }));
   };
 
-  const onSave = async () => {
-    await AsyncStorage.setItem("blockedApps", JSON.stringify(selectedApps));
-    await BlockedApps.setBlockedApps(selectedApps);
-    router.back();
+  // --- ADDED: 카테고리 전체 선택/해제 함수 ---
+  const toggleSelectAllInCategory = (section: any) => {
+    const categoryPackages = section.data.map((app: any) => app.packageName);
+    const areAllSelected = categoryPackages.every((pkg: string) => selectedApps.includes(pkg));
+
+    if (areAllSelected) {
+      // 모두 선택된 경우, 해당 카테고리 앱 모두 선택 해제
+      setSelectedApps(prev => prev.filter(pkg => !categoryPackages.includes(pkg)));
+    } else {
+      // 하나라도 선택되지 않은 경우, 해당 카테고리 앱 모두 선택
+      setSelectedApps(prev => [...new Set([...prev, ...categoryPackages])]);
+    }
   };
+  const onSave = async () => {
+    // 저장 로직 대신, router.replace를 사용해 파라미터와 함께 이전 화면으로 돌아갑니다.
+    // replace를 사용하면 뒤로가기 스택에 현재 화면이 남지 않습니다.
+    router.replace({
+      pathname: "/(protected)/(tabs)/(focus_zone)/add", // FocusZoneScreen 경로
+      params: {
+        ...params, // 🔽 add.tsx에서 받은 모든 params를 그대로 다시 전달!
+        updatedApps: JSON.stringify(selectedApps) // 수정된 앱 목록은 덮어쓰기
+      }
+    });
+  };
+
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F9FAFB" }}>
@@ -88,26 +121,34 @@ export default function AppSelectScreen() {
       <SectionList
         sections={appsByCategory}
         keyExtractor={item => item.packageName}
-        renderSectionHeader={({ section }) => (
-          <TouchableOpacity
-            style={styles.sectionHeader}
-            onPress={() => toggleCategory(section.title)}
-          >
-            <View style={styles.sectionLeft}>
-              <Ionicons
-                name={collapsed[section.title] ? "chevron-down" : "chevron-up"}
-                size={18}
-                color="#6B7280"
-              />
-              <Text style={styles.sectionTitle}>{section.title}</Text>
+        renderSectionHeader={({ section }) => {
+          // --- CHANGED 3: 카테고리 전체 선택 로직 추가 ---
+          const categoryPackages = section.data.map((app: any) => app.packageName);
+          const areAllSelected = categoryPackages.length > 0 && categoryPackages.every((pkg: string) => selectedApps.includes(pkg));
+
+          return (
+            <View style={styles.sectionHeader}>
+              <TouchableOpacity
+                style={styles.sectionLeft}
+                onPress={() => toggleCategory(section.title)}
+              >
+                <Ionicons
+                  name={collapsed[section.title] ? "chevron-forward" : "chevron-down"} // 아이콘 변경
+                  size={18}
+                  color="#6B7280"
+                />
+                <Text style={styles.sectionTitle}>{section.title}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => toggleSelectAllInCategory(section)}>
+                <Ionicons
+                  name={areAllSelected ? "checkmark-circle" : "checkmark-circle-outline"}
+                  size={24}
+                  color={areAllSelected ? "#2563EB" : "#9CA3AF"}
+                />
+              </TouchableOpacity>
             </View>
-            <Ionicons
-              name="checkmark-circle-outline"
-              size={20}
-              color="#9CA3AF"
-            />
-          </TouchableOpacity>
-        )}
+          )
+        }}
         renderItem={({ item, section }) =>
           !collapsed[section.title] ? (
             <TouchableOpacity
@@ -137,6 +178,7 @@ export default function AppSelectScreen() {
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   header: {

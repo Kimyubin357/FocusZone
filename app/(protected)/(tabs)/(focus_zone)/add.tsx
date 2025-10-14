@@ -1,9 +1,9 @@
 // app/(protected)/(tabs)/(focus_zone)/add.tsx
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -19,12 +19,13 @@ export default function AddFocusPlace() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
+  const isFocused = useIsFocused();
   const isEditMode = params.editMode === "true";
   const placeId = params.placeId as string | undefined;
 
   // ✅ 이름은 사용자가 타이핑한 값 유지가 중요하니 최초 한 번만 초기화
   const [name, setName] = useState(
-    isEditMode ? (params.name as string) : "새로운 집중장소"
+    (params.name as string) || "새로운 집중장소"
   );
 
   // 위치/반지름은 지도에서 돌아올 때 덮어씌울 수 있도록 초기값만 세팅
@@ -41,7 +42,14 @@ export default function AddFocusPlace() {
     params.radius ? Number(params.radius) : 400 // ← 기존 기본값
   );
 
-  const [appsBlockedCount, setAppsBlockedCount] = useState(0);
+  // --- MODIFIED: 차단 앱 '목록'을 직접 상태로 관리 ---
+  const [blockedApps, setBlockedApps] = useState<string[]>(() => {
+    // 수정 모드일 때 params에서 초기값 설정
+    if (isEditMode && params.blockedApps && typeof params.blockedApps === 'string') {
+      return JSON.parse(params.blockedApps);
+    }
+    return []; // 새 장소 등록 시에는 빈 배열로 시작
+  });
 
   // ✅ 포커스될 때 지도에서 저장해 둔 임시값(draft) 반영
   useFocusEffect(
@@ -59,16 +67,7 @@ export default function AddFocusPlace() {
           if (typeof draft.longitude === "number")
             setLongitude(draft.longitude);
           if (typeof draft.radius === "number") setRadius(draft.radius);
-          // 차단된 앱 수 불러오기
-          try {
-            const blocked = await AsyncStorage.getItem("blockedApps");
-            if (blocked && isActive) {
-              const list = JSON.parse(blocked);
-              setAppsBlockedCount(Array.isArray(list) ? list.length : 0);
-            } else if (isActive) {
-              setAppsBlockedCount(0);
-            }
-          } catch {}
+
         } catch (e) {
           // 무시
         }
@@ -78,11 +77,21 @@ export default function AddFocusPlace() {
       };
     }, [])
   );
+  useEffect(() => {
+    // AppSelectScreen에서 updatedApps 파라미터를 가지고 돌아왔을 때
+    if (isFocused && params.updatedApps && typeof params.updatedApps === 'string') {
+      const newBlockedApps = JSON.parse(params.updatedApps);
+      setBlockedApps(newBlockedApps);
+
+      // 파라미터를 사용한 후에는 정리(초기화)하여 다른 동작에 영향을 주지 않도록 합니다.
+      router.setParams({ updatedApps: undefined });
+    }
+  }, [params.updatedApps, isFocused]); // params.updatedApps가 변경될 때마다 실행
 
   const clearDraft = async () => {
     try {
       await AsyncStorage.removeItem("focusPlaceDraft");
-    } catch {}
+    } catch { }
   };
 
   const goToMap = () => {
@@ -102,7 +111,25 @@ export default function AddFocusPlace() {
       },
     });
   };
-
+  // --- ADDED: AppSelectScreen으로 이동하는 함수 ---
+  const goToAppSelect = () => {
+    router.push({
+      pathname: "/(protected)/(tabs)/(focus_zone)/appselect", // AppSelectScreen 경로
+      params: {
+        // 현재 이 장소에 설정된 앱 목록을 넘겨줌
+        currentApps: JSON.stringify(blockedApps),
+        name: name,
+        address: address,
+        latitude: latitude ?? "",
+        longitude: longitude ?? "",
+        radius: radius.toString(),
+        ...(isEditMode && {
+          editMode: "true",
+          placeId: placeId,
+        }),
+      }
+    });
+  };
   const onCancel = async () => {
     await clearDraft();
     router.back();
@@ -132,20 +159,17 @@ export default function AddFocusPlace() {
         places = places.map((place: any) =>
           place.id === placeId
             ? {
-                ...place,
-                name: name.trim(),
-                address,
-                latitude,
-                longitude,
-                radius,
-              }
+              ...place,
+              name: name.trim(),
+              address,
+              latitude,
+              longitude,
+              radius,
+              blockedApps: blockedApps,
+            }
             : place
         );
-        await AsyncStorage.setItem("focusPlaces", JSON.stringify(places));
-        await clearDraft();
-        Alert.alert("성공", "집중장소가 수정되었습니다.", [
-          { text: "확인", onPress: () => router.back() },
-        ]);
+
       } else {
         // 신규
         const newPlace = {
@@ -155,16 +179,16 @@ export default function AddFocusPlace() {
           latitude,
           longitude,
           radius,
-          count: 0,
-          selected: false,
+          isActive: true, // 새로 만들면 기본 활성화
+          blockedApps: blockedApps, // --- MODIFIED: blockedApps 저장 ---
         };
         places.push(newPlace);
-        await AsyncStorage.setItem("focusPlaces", JSON.stringify(places));
-        await clearDraft();
-        Alert.alert("성공", "집중장소가 등록되었습니다.", [
-          { text: "확인", onPress: () => router.back() },
-        ]);
       }
+      await AsyncStorage.setItem("focusPlaces", JSON.stringify(places));
+      await clearDraft();
+      Alert.alert("성공", isEditMode ? "수정되었습니다." : "등록되었습니다.", [
+        { text: "확인", onPress: () => router.replace('/(protected)/(tabs)/(focus_zone)') },
+      ]);
     } catch (error) {
       Alert.alert("오류", "저장에 실패했습니다.");
     }
@@ -219,14 +243,14 @@ export default function AddFocusPlace() {
           <TouchableOpacity
             style={styles.rowBtn}
             activeOpacity={0.8}
-            onPress={() => router.push("/(protected)/(tabs)/(focus_zone)/appselect")}
+            onPress={() => goToAppSelect()}
           >
             <Ionicons name="grid-outline" size={18} color="#2563EB" />
             <Text style={styles.rowBtnText}>
               앱 목록{" "}
-              <Text style={{ color: "#2563EB", fontWeight: "bold" }}>
+              {/* <Text style={{ color: "#2563EB", fontWeight: "bold" }}>
                 {appsBlockedCount}
-              </Text>
+              </Text> */}
             </Text>
           </TouchableOpacity>
         </View>

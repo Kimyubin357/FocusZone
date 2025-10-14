@@ -3,13 +3,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import {
-  collection,
+  collection, // collectionGroup 쿼리를 위해 추가
   deleteDoc,
-  doc,
+  doc, // documentId 쿼리를 위해 추가
   getDoc,
   getDocs,
   query,
-  where,
+  where
 } from "firebase/firestore";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -31,10 +31,11 @@ type GroupItem = {
   id: string;
   locationName: string;
   address: string;
-  ownerName?: string;
+  ownerName: string;
   memberIds?: string[];
   memberAvatars?: string[];
   activeDays?: number[]; // [0~6] = 일~토
+  
 };
 
 // 요일 라벨

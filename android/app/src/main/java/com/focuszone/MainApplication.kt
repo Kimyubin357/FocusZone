@@ -17,15 +17,15 @@ import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
 import com.focuszone.lock.BlockedAppsPackage
 
-class MainApplication : Application(), ReactApplication { // 전역 상태 관리하는 클래스
+class MainApplication : Application(), ReactApplication {
 
-  override val reactNativeHost: ReactNativeHost = ReactNativeHostWrapper( // js에서 NativeModules.BlockedApps로 접근할 수 있도록
+  override val reactNativeHost: ReactNativeHost = ReactNativeHostWrapper(
       this,
       object : DefaultReactNativeHost(this) {
         override fun getPackages(): List<ReactPackage> =
             PackageList(this).packages.apply {
               // Packages that cannot be autolinked yet can be added manually here, for example:
-              add(BlockedAppsPackage()) 
+              add(BlockedAppsPackage())
             }
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"
