@@ -179,7 +179,6 @@ export default function AppSelectScreen() {
   );
 }
 
-
 const styles = StyleSheet.create({
   header: {
     flexDirection: "row",

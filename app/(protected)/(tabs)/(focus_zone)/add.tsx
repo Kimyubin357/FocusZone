@@ -39,7 +39,7 @@ export default function AddFocusPlace() {
     params.longitude ? Number(params.longitude) : undefined
   );
   const [radius, setRadius] = useState<number>(
-    params.radius ? Number(params.radius) : 400 // ← 기존 기본값
+    params.radius ? Number(params.radius) : (isEditMode ? 100 : 100) // 둘 다 100
   );
 
   // --- MODIFIED: 차단 앱 '목록'을 직접 상태로 관리 ---
@@ -67,7 +67,6 @@ export default function AddFocusPlace() {
           if (typeof draft.longitude === "number")
             setLongitude(draft.longitude);
           if (typeof draft.radius === "number") setRadius(draft.radius);
-
         } catch (e) {
           // 무시
         }

@@ -15,10 +15,11 @@
       tools:ignore="QueryAllPackagesPermission" />
 
   <queries>
+    <!-- Support checking for http(s) links via the Linking API -->
     <intent>
-      <action android:name="android.intent.action.VIEW"/>
-      <category android:name="android.intent.category.BROWSABLE"/>
-      <data android:scheme="https"/>
+      <action android:name="android.intent.action.VIEW" />
+      <category android:name="android.intent.category.BROWSABLE" />
+      <data android:scheme="https" />
     </intent>
   </queries>
 
@@ -32,7 +33,7 @@
     android:supportsRtl="true" 
     android:enableOnBackInvokedCallback="false">
 
-    <meta-data android:name="com.google.android.geo.API_KEY" android:value="AIzaSyBSGtQUJ0WUzvQ2M2-D1fKDUADUbf53rBk"/>
+    <meta-data android:name="com.google.android.geo.API_KEY" android:value="AIzaSyBTbK1Rj0Iq_uay8__IsuEdMRt00toi-OQ"/>
     <meta-data android:name="expo.modules.updates.ENABLED" android:value="false"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>

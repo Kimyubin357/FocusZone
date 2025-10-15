@@ -127,8 +127,8 @@ export const startLocationTask = async () => {
 
   await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
     accuracy: Location.Accuracy.BestForNavigation, // 최고 정확도 설정
-    timeInterval: 60 * 1000, // 1분마다
-    distanceInterval: 20, // 20m 이상 움직였을 때
+    timeInterval: 3 * 1000, // 1분마다
+    distanceInterval: 5, // 20m 이상 움직였을 때
     showsBackgroundLocationIndicator: true,
     foregroundService: {
       notificationTitle: '집중 모드',

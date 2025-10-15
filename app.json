@@ -20,7 +20,7 @@
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyBSGtQUJ0WUzvQ2M2-D1fKDUADUbf53rBk"
+          "apiKey": "AIzaSyBTbK1Rj0Iq_uay8__IsuEdMRt00toi-OQ"
         }
       },
       "adaptiveIcon": {
@@ -57,6 +57,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d48355b9-9cd6-4695-b47e-84237588a1b8"
+      }
+    },
+    "owner": "yong332"
   }
 }

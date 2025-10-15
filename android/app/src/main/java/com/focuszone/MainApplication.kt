@@ -17,9 +17,9 @@ import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
 import com.focuszone.lock.BlockedAppsPackage
 
-class MainApplication : Application(), ReactApplication {
+class MainApplication : Application(), ReactApplication { // 전역 상태 관리하는 클래스
 
-  override val reactNativeHost: ReactNativeHost = ReactNativeHostWrapper(
+  override val reactNativeHost: ReactNativeHost = ReactNativeHostWrapper( // js에서 NativeModules.BlockedApps로 접근할 수 있도록
       this,
       object : DefaultReactNativeHost(this) {
         override fun getPackages(): List<ReactPackage> =
