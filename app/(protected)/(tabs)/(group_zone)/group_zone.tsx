@@ -21,7 +21,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { auth, db } from "../../../../firebaseConfig";
@@ -32,10 +32,11 @@ type GroupItem = {
   locationName: string;
   address: string;
   ownerName: string;
+  userId: string; // 👈 [추가] 소유자(그룹장)의 UID
   memberIds?: string[];
   memberAvatars?: string[];
   activeDays?: number[]; // [0~6] = 일~토
-  
+
 };
 
 // 요일 라벨
@@ -45,6 +46,7 @@ export default function GroupZone() {
   const router = useRouter();
   const [list, setList] = useState<GroupItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [myUid, setMyUid] = useState<string | null>(null); // 👈 [추가] 내 UID 저장
 
   // 메뉴 상태(어느 카드인지 + 버튼 좌표 앵커)
   const [menuForId, setMenuForId] = useState<string | null>(null);
@@ -64,9 +66,12 @@ export default function GroupZone() {
       if (!user) {
         setList([]);
         setLoading(false);
+        setMyUid(null); // 👈 [추가]
         return;
       }
+      setMyUid(user.uid); // 👈 [추가]
       load(user.uid);
+
     });
     return unsub;
   }, []);
@@ -112,6 +117,7 @@ export default function GroupZone() {
           address: data.address ?? "",
           // 문서에 ownerName/owner 가 없으면 → 내 닉네임으로 표기
           ownerName: data.ownerName ?? data.owner ?? myNickname,
+          userId: data.userId, // 👈 [추가] (쿼리 조건이 'userId'이므로 항상 존재함)
           memberIds: data.memberIds ?? [],
           memberAvatars: data.memberAvatars ?? [],
           activeDays: data.activeDays ?? [],
@@ -177,6 +183,25 @@ export default function GroupZone() {
     return Math.min(Math.max(8, preferred), SCREEN_W - MENU_W - 8);
   })();
 
+  // 👈 [추가] 카드 클릭 핸들러
+  const onPressCard = (item: GroupItem) => {
+    if (!myUid) return;
+
+    const isOwner = item.userId === myUid;
+
+    if (isOwner) {
+      // 그룹장일 경우: 상세 페이지로 이동
+      router.push({
+        pathname: `/(protected)/(tabs)/(group_zone)/${item.id}`,
+      });
+    } else {
+      // 그룹원일 경우: 내 통계 페이지로 이동
+      router.push({
+        pathname: `/(protected)/(tabs)/(group_zone)/stats/${item.id}`,
+      });
+    }
+  };
+
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Ionicons name="location-outline" size={48} color="#D1D5DB" />
@@ -188,10 +213,12 @@ export default function GroupZone() {
   );
 
   const renderItem = ({ item }: { item: GroupItem }) => (
-    <GroupCard
-      item={item}
-      onPressMenu={(anchor) => onPressCardMenu(item.id, anchor)}
-    />
+    <Pressable onPress={() => onPressCard(item)}>
+      <GroupCard
+        item={item}
+        onPressMenu={(anchor) => onPressCardMenu(item.id, anchor)}
+      />
+    </Pressable>
   );
 
   return (
@@ -262,9 +289,9 @@ function GroupCard({
       item.memberAvatars && item.memberAvatars.length > 0
         ? item.memberAvatars.slice(0, 6)
         : Array.from(
-            { length: Math.min(memberCount, 6) },
-            (_, i) => `M${i + 1}`
-          );
+          { length: Math.min(memberCount, 6) },
+          (_, i) => `M${i + 1}`
+        );
     return arr;
   }, [item.memberAvatars, memberCount]);
 
