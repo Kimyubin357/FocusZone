@@ -180,7 +180,7 @@ export default function FocusZoneScreen() {
 
   const toggleSelection = (item: Place) => {
     const updated = places.map((p) =>
-      p.id === item.id ? { ...p, selected: !p.isActive } : p
+      p.id === item.id ? { ...p, isActive: !p.isActive } : p
     );
     savePlaces(updated);
   };
