@@ -1,0 +1,16 @@
+[
+    {
+  "relation": [
+            "focuszone-568cc.web.app"
+        ],
+  "target": {
+    "namespace": "focuszone",
+    "package_name": "com.focuszone",
+    "sha256_cert_fingerprints": [
+      "YOUR_SHA_256_CERT_FINGERPRINT_HERE"
+   
+            ]
+ 
+        }
+    }
+]

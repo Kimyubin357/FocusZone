@@ -1,5 +1,4 @@
 // app/(protected)/(tabs)/(group_zone)/group_zone.tsx — Minimal theming (preserve all UI/logic)
-
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
@@ -25,7 +24,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { auth, db } from "../../../../firebaseConfig";
@@ -35,7 +34,10 @@ type GroupItem = {
   id: string;
   groupName: string;
   address: string;
-  ownerName: string; // [수정]
+  ownerName: string;
+  userId: string; // 👈 [추가] 소유자(그룹장)의 UID
+  memberIds?: string[];
+  memberAvatars?: string[];
   memberCount: number; // [수정]
   activeDays?: number[]; // [0~6] = 일~토
   inviteCode?: string; // 초대 코드
@@ -55,11 +57,9 @@ const hexToRgba = (hex: string, alpha: number) => {
 
 export default function GroupZone() {
   const router = useRouter();
-  // 기본 색상 (라이트 테마 가정)
-  
-
   const [list, setList] = useState<GroupItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [myUid, setMyUid] = useState<string | null>(null); // 👈 [추가] 내 UID 저장
 
   // 메뉴 상태(어느 카드인지 + 버튼 좌표 앵커)
   const [menuForId, setMenuForId] = useState<string | null>(null);
@@ -79,9 +79,12 @@ export default function GroupZone() {
       if (!user) {
         setList([]);
         setLoading(false);
+        setMyUid(null); // 👈 [추가]
         return;
       }
+      setMyUid(user.uid); // 👈 [추가]
       load(user.uid);
+
     });
     return unsub;
   }, []);
@@ -144,6 +147,7 @@ export default function GroupZone() {
           address: data.address ?? "",
           // [수정] 'creatorId' -> 'ownerId'
           ownerName: ownersMap.get(data.ownerId) ?? "알 수 없음",
+           userId: data.ownerId, // 👈 [추가] (쿼리 조건이 'userId'이므로 항상 존재함)
           // [수정] 'memberCount' 필드 사용
           memberCount: data.memberCount ?? 0,
           activeDays: data.activeDays ?? [],
@@ -220,6 +224,25 @@ export default function GroupZone() {
     return Math.min(Math.max(8, preferred), SCREEN_W - MENU_W - 8);
   })();
 
+  // 👈 [추가] 카드 클릭 핸들러
+  const onPressCard = (item: GroupItem) => {
+    if (!myUid) return;
+
+    const isOwner = item.userId === myUid;
+
+    if (isOwner) {
+      // 그룹장일 경우: 상세 페이지로 이동
+      router.push({
+        pathname: `/(protected)/(tabs)/(group_zone)/${item.id}`,
+      });
+    } else {
+      // 그룹원일 경우: 내 통계 페이지로 이동
+      router.push({
+        pathname: `/(protected)/(tabs)/(group_zone)/stats/${item.id}`,
+      });
+    }
+  };
+
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Ionicons name="location-outline" size={48} color={colors.muted} />
@@ -233,10 +256,12 @@ export default function GroupZone() {
   );
 
   const renderItem = ({ item }: { item: GroupItem }) => (
-    <GroupCard
-      item={item}
-      onPressMenu={(anchor) => onPressCardMenu(item.id, anchor)}
-    />
+    <Pressable onPress={() => onPressCard(item)}>
+      <GroupCard
+        item={item}
+        onPressMenu={(anchor) => onPressCardMenu(item.id, anchor)}
+      />
+    </Pressable>
   );
 const colors = {
     background: "#FFFFFF",
