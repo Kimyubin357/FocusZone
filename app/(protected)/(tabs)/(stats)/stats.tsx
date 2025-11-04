@@ -1,10 +1,11 @@
-// [STATS] UPDATED: 통계 화면 통합 (내용은 사용자 제공 코드와 동일)
+// [STATS] UPDATED: 통계 화면 (스크롤 가능 + 라이브 타이머 유지)
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -113,76 +114,82 @@ export default function Stats() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <PlaceSelector value={placeId} onChange={setPlaceId} />
-        <View style={{ height: 8 }} />
-        <PeriodToggle value={granularity} onChange={setGranularity} />
-        <View style={{ height: 8 }} />
-        <DatePager
-          anchor={anchor}
-          granularity={granularity}
-          onChange={setAnchor}
-          onToday={() => setAnchor(new Date())}
-        />
-        {/* 실시간 배지 + 저장 확인 */}
-        <LiveNowBadge userId={userId} placeId={placeId} />
-        <StorageInspector userId={userId} placeId={placeId} />
-      </View>
+      {/* [STATS] 수정됨: 전체를 ScrollView로 감싸서 세션 로그가 길어도 스크롤 가능 */}
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.header}>
+          <PlaceSelector value={placeId} onChange={setPlaceId} />
+          <View style={{ height: 8 }} />
+          <PeriodToggle value={granularity} onChange={setGranularity} />
+          <View style={{ height: 8 }} />
+          <DatePager
+            anchor={anchor}
+            granularity={granularity}
+            onChange={setAnchor}
+            onToday={() => setAnchor(new Date())}
+          />
+          {/* 실시간 배지 + 저장 확인 */}
+          <LiveNowBadge userId={userId} placeId={placeId} />
+          <StorageInspector userId={userId} placeId={placeId} />
+        </View>
 
-      {!placeId ? (
-        <View style={styles.center}>
-          <Text style={{ color: "#6B7280" }}>집중장소를 선택하세요.</Text>
-        </View>
-      ) : stats.loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator />
-        </View>
-      ) : (
-        <View style={styles.body}>
-          <View style={styles.summary}>
-            <Text style={styles.summaryTitle}>{title}</Text>
-            <Text style={styles.summaryValue}>{fmtHm(stats.totalMs)}</Text>
-            {granularity === "week" && stats.activeDaysCount !== undefined && (
-              <Text style={styles.sub}>
-                참가일 {stats.activeDaysCount} / 7일
-              </Text>
+        {!placeId ? (
+          <View style={styles.center}>
+            <Text style={{ color: "#6B7280" }}>집중장소를 선택하세요.</Text>
+          </View>
+        ) : stats.loading ? (
+          <View style={styles.center}>
+            <ActivityIndicator />
+          </View>
+        ) : (
+          <View style={styles.body}>
+            <View style={styles.summary}>
+              <Text style={styles.summaryTitle}>{title}</Text>
+              <Text style={styles.summaryValue}>{fmtHm(stats.totalMs)}</Text>
+              {granularity === "week" &&
+                stats.activeDaysCount !== undefined && (
+                  <Text style={styles.sub}>
+                    참가일 {stats.activeDaysCount} / 7일
+                  </Text>
+                )}
+            </View>
+
+            {granularity === "day" && stats.timeline24 && (
+              <DayTimeline hours={stats.timeline24} />
             )}
-          </View>
+            {granularity === "week" && stats.weekBars && (
+              <WeekBars values={stats.weekBars} />
+            )}
+            {granularity === "month" && stats.monthGrid && (
+              <MonthGrid days={stats.monthGrid} />
+            )}
 
-          {granularity === "day" && stats.timeline24 && (
-            <DayTimeline hours={stats.timeline24} />
-          )}
-          {granularity === "week" && stats.weekBars && (
-            <WeekBars values={stats.weekBars} />
-          )}
-          {granularity === "month" && stats.monthGrid && (
-            <MonthGrid days={stats.monthGrid} />
-          )}
-
-          <View style={{ marginTop: 12 }}>
-            <Text style={styles.sectionTitle}>진입 & 이탈 시간</Text>
-            <FlatList
-              data={stats.sessions.sort((a, b) => a.startedAt - b.startedAt)}
-              keyExtractor={(it) => it.id}
-              renderItem={({ item }) => (
-                <View style={styles.sessionRow}>
-                  <Text style={styles.sessionText}>
-                    {toHm(item.startedAt)} ~ {toHm(item.endedAt)}
+            <View style={{ marginTop: 12 }}>
+              <Text style={styles.sectionTitle}>진입 & 이탈 시간</Text>
+              <FlatList
+                data={stats.sessions.sort((a, b) => a.startedAt - b.startedAt)}
+                keyExtractor={(it) => it.id}
+                renderItem={({ item }) => (
+                  <View style={styles.sessionRow}>
+                    <Text style={styles.sessionText}>
+                      {toHm(item.startedAt)} ~ {toHm(item.endedAt)}
+                    </Text>
+                    <Text style={[styles.sessionText, { color: "#2563EB" }]}>
+                      {fmtHm(item.durationMs)}
+                    </Text>
+                  </View>
+                )}
+                // [STATS] 수정됨: 스크롤은 상위 ScrollView가 담당 → 내부 리스트 스크롤 끔
+                scrollEnabled={false}
+                ListEmptyComponent={
+                  <Text style={{ color: "#9CA3AF", marginTop: 6 }}>
+                    기록이 없습니다.
                   </Text>
-                  <Text style={[styles.sessionText, { color: "#2563EB" }]}>
-                    {fmtHm(item.durationMs)}
-                  </Text>
-                </View>
-              )}
-              ListEmptyComponent={
-                <Text style={{ color: "#9CA3AF", marginTop: 6 }}>
-                  기록이 없습니다.
-                </Text>
-              }
-            />
+                }
+              />
+            </View>
           </View>
-        </View>
-      )}
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -273,6 +280,8 @@ function toHm(ms: number) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F9FAFB" },
+  // [STATS] 수정됨: ScrollView 안쪽 여백/하단 패딩
+  scrollContent: { paddingBottom: 40 }, // [STATS] 수정됨
   header: { padding: 16 },
   body: { paddingHorizontal: 16, paddingBottom: 16 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
