@@ -1,53 +1,33 @@
+// app/(protected)/(tabs)/(group_zone)/[groupId].tsx
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useLocalSearchParams } from "expo-router";
-import { doc, getDoc } from "firebase/firestore";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { collection, doc, getDoc, onSnapshot } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
     ActivityIndicator,
     ScrollView,
     StyleSheet,
     Text,
-    View,
+    View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { db } from "../../../../firebaseConfig";
 
-// ---- 타입
-// (GroupItem과 유사하지만, 상세 정보 포함)
+// ---- 타입 ----
 type GroupLocationDetails = {
     id: string;
-    groupName: string;
+    groupName: string; // 👈 locationName -> groupName
     address: string;
     blockedApps?: string[];
     blockedAppsCount?: number;
     memberIds?: string[];
 };
 
-// TODO: 체류/부재 상태는 별도 로직(예: 실시간 리스너)으로 가져와야 함
-// 임시 더미 데이터
-const DUMMY_STAYING = ["물고기", "돼찌", "소고기", "닭고기", "닉네임22"];
-const DUMMY_AWAY = [
-    "닉네임3",
-    "닉네임4",
-    "닉네임5",
-    "닉네임6",
-    "닉네임7",
-    "닉네임8",
-    "닉네임9",
-    "닉네임10",
-    "닉네임11",
-    "닉네임12",
-    "닉네임13",
-    "닉네임14",
-    "닉네임15",
-    "닉네임16",
-    "닉네임17",
-    "닉네임18",
-    "닉네임19",
-    "닉네임20",
-    "닉네임21",
-    "닉네임23",
-];
+// [추가] 멤버 데이터 타입
+type GroupMember = {
+    id: string; // 유저 UID
+    nickname: string;
+};
 
 // 차단 앱 아이콘 매핑
 const APP_ICONS: { [key: string]: React.ComponentProps<typeof Ionicons>["name"] } = {
@@ -58,16 +38,22 @@ const APP_ICONS: { [key: string]: React.ComponentProps<typeof Ionicons>["name"] 
 const DEFAULT_ICON = "apps-outline";
 
 export default function GroupZoneDetails() {
+    const router = useRouter();
     const { groupId } = useLocalSearchParams();
     const [loading, setLoading] = useState(true);
     const [details, setDetails] = useState<GroupLocationDetails | null>(null);
 
-    // TODO: 체류/부재 인원 상태 (실시간 데이터로 교체 필요)
-    const stayingCount = DUMMY_STAYING.length;
-    const totalCount = stayingCount + DUMMY_AWAY.length;
+    // [추가] 실시간 멤버 리스트 State
+    const [stayingList, setStayingList] = useState<GroupMember[]>([]);
+    const [awayList, setAwayList] = useState<GroupMember[]>([]);
+
+    // [수정] 실시간 데이터 기반으로 카운트 계산
+    const stayingCount = stayingList.length;
+    const totalCount = stayingList.length + awayList.length;
     const stayPercent =
         totalCount > 0 ? Math.round((stayingCount / totalCount) * 100) : 0;
 
+    // Effect 1: 그룹 기본 정보 1회 로드
     useEffect(() => {
         if (!groupId) return;
 
@@ -81,12 +67,13 @@ export default function GroupZoneDetails() {
                     const data: any = docSnap.data();
                     setDetails({
                         id: docSnap.id,
-                        groupName: data.locationName ?? "그룹장소명",
+                        groupName: data.groupName ?? "그룹장소명", // 👈 groupName으로 수정
                         address: data.address ?? "주소 없음",
-                        // 이미지에 있는 '차단 앱' 정보 (필드명은 가정)
-                        blockedApps: data.blockedApps ?? ["게임", "SNS", "엔터테인먼트"],
-                        blockedAppsCount: data.blockedAppsCount ?? 55,
-                        memberIds: data.memberIds ?? [],
+                        // [수정] DB 스키마에 맞게 필드명 변경
+                        blockedApps: data.blockedAppCategories ?? [],
+                        // [수정] blockedAppsCount는 blockedAppCategories의 길이를 사용
+                        blockedAppsCount: data.blockedAppCategories?.length ?? 0,
+                        memberIds: data.memberIds ?? [], // (이 필드는 현재 사용되지 않음)
                     });
                 } else {
                     // TODO: 존재하지 않는 장소 처리
@@ -101,6 +88,58 @@ export default function GroupZoneDetails() {
         loadDetails();
     }, [groupId]);
 
+    // [추가] Effect 2: 멤버 리스트 실시간 리스너 설정
+    useEffect(() => {
+        if (!groupId) return;
+
+        const membersColRef = collection(
+            db,
+            "groupLocations",
+            groupId as string,
+            "members"
+        );
+
+        // 실시간 리스너 시작
+        const unsubscribe = onSnapshot(membersColRef, (snapshot) => {
+            const staying: GroupMember[] = [];
+            const away: GroupMember[] = [];
+
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                const member: GroupMember = {
+                    id: doc.id, // 문서 ID가 유저의 UID임
+                    nickname: data.groupNickname ?? "이름 없음", // DB 필드명: groupNickname
+                };
+
+                // 'active' 상태일 때만 체류 중, 그 외(inactive, undefined 등)는 모두 부재 중
+                if (data.status === "active") {
+                    staying.push(member);
+                } else {
+                    away.push(member);
+                }
+            });
+
+            // State 업데이트
+            setStayingList(staying);
+            setAwayList(away);
+        });
+
+        // 클린업 함수: 화면을 벗어날 때 리스너 해제
+        return () => {
+            unsubscribe();
+        };
+    }, [groupId]); // groupId가 변경될 때만 이 Effect 실행
+
+    // 👈 [추가] 멤버 클릭 핸들러
+    const onPressMember = (memberId: string) => {
+        router.push({
+            // 기존 stats 페이지 경로
+            pathname: `/(protected)/(tabs)/(group_zone)/stats/${groupId}`,
+            // 파라미터로 'memberId'를 넘겨줌
+            params: { memberId: memberId }
+        });
+    };
+    
     if (loading) {
         return (
             <View style={styles.loader}>
@@ -140,7 +179,7 @@ export default function GroupZoneDetails() {
                         <Text style={styles.addressText}>{details.address}</Text>
                     </View>
 
-                    {/* 체류 현황 */}
+                    {/* 체류 현황 (이제 실시간) */}
                     <View style={styles.statusRow}>
                         <Text style={styles.statusText}>
                             현재 체류 중{" "}
@@ -153,18 +192,18 @@ export default function GroupZoneDetails() {
                         </View>
                     </View>
 
-                    {/* 차단 앱 */}
+                    {/* 차단 앱 (수정됨) */}
                     <View style={styles.blockedAppsRow}>
                         <Text style={styles.blockedAppsTitle}>차단 앱</Text>
-                        {(details.blockedApps ?? []).map((app) => (
-                            <View key={app} style={styles.appTag}>
+                        {(details.blockedApps ?? []).map((appCategory) => (
+                            <View key={appCategory} style={styles.appTag}>
                                 <Ionicons
-                                    name={APP_ICONS[app] ?? DEFAULT_ICON}
+                                    name={APP_ICONS[appCategory] ?? DEFAULT_ICON}
                                     size={14}
                                     color="#374151"
                                     style={{ marginRight: 4 }}
                                 />
-                                <Text style={styles.appTagText}>{app}</Text>
+                                <Text style={styles.appTagText}>{appCategory}</Text>
                             </View>
                         ))}
                         <View style={styles.countBadge}>
@@ -173,38 +212,50 @@ export default function GroupZoneDetails() {
                     </View>
                 </View>
 
-                {/* 체류 중 리스트 */}
+                {/* [수정] 체류 중 리스트 (실시간) */}
                 <Text style={styles.listTitle}>체류 중 - {stayingCount}</Text>
                 <View style={styles.memberList}>
-                    {DUMMY_STAYING.map((name, index) => (
+                    {stayingList.map((member, index) => (
                         <View
-                            key={index}
+                            key={member.id} // 👈 key를 name 대신 member.id로 변경
                             style={[
                                 styles.memberRow,
                                 index === 0 && { borderTopWidth: 0 },
                             ]}
                         >
                             <View style={[styles.avatar, { backgroundColor: "#2563EB" }]} />
-                            <Text style={styles.memberName}>{name}</Text>
+                            <Text style={styles.memberName}>{member.nickname}</Text>
                         </View>
                     ))}
+                    {/* [추가] 리스트가 비어있을 때 */}
+                    {stayingList.length === 0 && (
+                        <View style={styles.emptyList}>
+                           <Text style={styles.emptyListText}>체류 중인 멤버가 없습니다.</Text>
+                        </View>
+                    )}
                 </View>
 
-                {/* 부재 중 리스트 */}
-                <Text style={styles.listTitle}>부재 중 - {DUMMY_AWAY.length}</Text>
+                {/* [수정] 부재 중 리스트 (실시간) */}
+                <Text style={styles.listTitle}>부재 중 - {awayList.length}</Text>
                 <View style={styles.memberList}>
-                    {DUMMY_AWAY.map((name, index) => (
+                    {awayList.map((member, index) => (
                         <View
-                            key={index}
+                            key={member.id} // 👈 key를 name 대신 member.id로 변경
                             style={[
                                 styles.memberRow,
                                 index === 0 && { borderTopWidth: 0 },
                             ]}
                         >
                             <View style={[styles.avatar, { backgroundColor: "#9CA3AF" }]} />
-                            <Text style={styles.memberName}>{name}</Text>
+                            <Text style={styles.memberName}>{member.nickname}</Text>
                         </View>
                     ))}
+                     {/* [추가] 리스트가 비어있을 때 */}
+                    {awayList.length === 0 && (
+                        <View style={styles.emptyList}>
+                           <Text style={styles.emptyListText}>부재 중인 멤버가 없습니다.</Text>
+                        </View>
+                    )}
                 </View>
             </ScrollView>
         </SafeAreaView>
@@ -348,5 +399,15 @@ const styles = StyleSheet.create({
     memberName: {
         fontSize: 14,
         color: "#111827",
+    },
+    // [추가] 리스트가 비어있을 때 스타일
+    emptyList: {
+      paddingVertical: 16,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    emptyListText: {
+      fontSize: 14,
+      color: "#6B7280",
     },
 });
