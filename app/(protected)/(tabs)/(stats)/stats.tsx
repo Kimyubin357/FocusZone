@@ -2,21 +2,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { FlatList, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import StorageInspector from "../../../../src/features/stats/dev/StorageInspector";
 import type { Granularity } from "../../../../src/features/stats/types";
 import { useStats } from "../../../../src/features/stats/useStats";
 import DatePager from "../../../../src/features/ui/DatePager";
 import PeriodToggle from "../../../../src/features/ui/PeriodToggle";
-import PlaceSelector from "../../../../src/features/ui/PlaceSelector";
+// PlaceSelector removed: stats aggregates across all places by default
 import { fmtHm } from "../../../../src/services/lib/time";
 
 /** HH:mm:ss */
@@ -91,13 +83,13 @@ function LiveNowBadge({
 export default function Stats() {
   const userId = "local";
 
-  const [placeId, setPlaceId] = useState<string | undefined>(undefined);
+  const [placeId] = useState<string | undefined>(undefined);
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [anchor, setAnchor] = useState(new Date());
 
   const stats = useStats({
     userId,
-    placeId: placeId || "__none__",
+    placeId: "__all__",
     anchor,
     granularity,
   });
@@ -117,8 +109,6 @@ export default function Stats() {
       {/* [STATS] 수정됨: 전체를 ScrollView로 감싸서 세션 로그가 길어도 스크롤 가능 */}
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <PlaceSelector value={placeId} onChange={setPlaceId} />
-          <View style={{ height: 8 }} />
           <PeriodToggle value={granularity} onChange={setGranularity} />
           <View style={{ height: 8 }} />
           <DatePager
@@ -129,16 +119,11 @@ export default function Stats() {
           />
           {/* 실시간 배지 + 저장 확인 */}
           <LiveNowBadge userId={userId} placeId={placeId} />
-          <StorageInspector userId={userId} placeId={placeId} />
         </View>
 
-        {!placeId ? (
+        {stats.loading ? (
           <View style={styles.center}>
             <Text style={{ color: "#6B7280" }}>집중장소를 선택하세요.</Text>
-          </View>
-        ) : stats.loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator />
           </View>
         ) : (
           <View style={styles.body}>
@@ -282,7 +267,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F9FAFB" },
   // [STATS] 수정됨: ScrollView 안쪽 여백/하단 패딩
   scrollContent: { paddingBottom: 40 }, // [STATS] 수정됨
-  header: { padding: 16 },
+  header: { padding: 16, marginTop: 16 },
   body: { paddingHorizontal: 16, paddingBottom: 16 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   summary: {

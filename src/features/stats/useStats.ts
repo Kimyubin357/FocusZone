@@ -8,6 +8,7 @@ import {
   toYMD,
 } from "../../services/lib/time"; // 경로 주의
 import type { SessionRow, UseStatsParams, UseStatsResult } from "./types";
+import AsyncStorageLib from "@react-native-async-storage/async-storage";
 
 // 내부 키 포맷 상수
 // - 진행중 세션 목록: currentSessions:${userId} => [{placeId, startedAt}]
@@ -21,6 +22,26 @@ async function loadDaySessions(userId: string, placeId: string, date: Date) {
   const raw = await AsyncStorage.getItem(key);
   const rows: SessionRow[] = raw ? JSON.parse(raw) : [];
   return rows;
+}
+
+async function getAllPlaceIds(): Promise<string[]> {
+  try {
+    const rawFocus = await AsyncStorageLib.getItem("focusPlaces");
+    const rawLegacy = await AsyncStorageLib.getItem("places");
+    let arr: any[] = [];
+    if (rawFocus) {
+      const parsed = JSON.parse(rawFocus) as any[];
+      arr = (parsed || []).map((p) => p.id ?? p.placeId ?? String(p.name ?? p.address ?? "unknown"));
+    } else if (rawLegacy) {
+      const parsed = JSON.parse(rawLegacy) as any[];
+      arr = (parsed || []).map((p) => p.id ?? String(p.name ?? "unknown"));
+    }
+    const ids = (arr || []).map((v) => String(v)).filter(Boolean);
+    // unique
+    return Array.from(new Set(ids));
+  } catch {
+    return [];
+  }
 }
 
 function sumMs(rows: SessionRow[]) {
@@ -67,30 +88,40 @@ export function useStats(params: UseStatsParams): UseStatsResult {
           }
           return;
         }
-        if (granularity === "day") {
-          const dayRows = await loadDaySessions(userId, placeId, anchor);
-          if (alive) setSessions(dayRows);
-        } else if (granularity === "week") {
-          const start = startOfWeek(anchor);
-          const rows: SessionRow[] = [];
-          for (let i = 0; i < 7; i++) {
-            const r = await loadDaySessions(userId, placeId, addDays(start, i));
-            rows.push(...r);
+        const loadForPlace = async (pid: string) => {
+          if (granularity === "day") {
+            return await loadDaySessions(userId, pid, anchor);
+          } else if (granularity === "week") {
+            const start = startOfWeek(anchor);
+            const rows: SessionRow[] = [];
+            for (let i = 0; i < 7; i++) {
+              const r = await loadDaySessions(userId, pid, addDays(start, i));
+              rows.push(...r);
+            }
+            return rows;
+          } else {
+            const start = startOfMonth(anchor);
+            const nextMonth = new Date(start);
+            nextMonth.setMonth(start.getMonth() + 1);
+            const rows: SessionRow[] = [];
+            for (let d = new Date(start); d < nextMonth; d.setDate(d.getDate() + 1)) {
+              const r = await loadDaySessions(userId, pid, d);
+              rows.push(...r);
+            }
+            return rows;
           }
-          if (alive) setSessions(rows);
+        };
+
+        if (placeId === "__all__") {
+          const ids = await getAllPlaceIds();
+          const allRows: SessionRow[] = [];
+          for (const pid of ids) {
+            const r = await loadForPlace(pid);
+            allRows.push(...r);
+          }
+          if (alive) setSessions(allRows);
         } else {
-          const start = startOfMonth(anchor);
-          const nextMonth = new Date(start);
-          nextMonth.setMonth(start.getMonth() + 1);
-          const rows: SessionRow[] = [];
-          for (
-            let d = new Date(start);
-            d < nextMonth;
-            d.setDate(d.getDate() + 1)
-          ) {
-            const r = await loadDaySessions(userId, placeId, d);
-            rows.push(...r);
-          }
+          const rows = await loadForPlace(placeId);
           if (alive) setSessions(rows);
         }
       } finally {
