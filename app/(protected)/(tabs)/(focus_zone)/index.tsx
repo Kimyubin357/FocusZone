@@ -8,7 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
-import React, {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -18,13 +18,15 @@ import React, {
 import {
   Alert,
   FlatList,
+  Modal, // [추가]
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import MapView, { Circle, PROVIDER_GOOGLE, Region } from "react-native-maps";
-import Popover from "react-native-popover-view";
+// [제거] import Popover from "react-native-popover-view";
+
 // --- ADDED: locationService 임포트 ---
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,6 +62,8 @@ export default function FocusZoneScreen() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
+
+  // 추가
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
@@ -224,6 +228,7 @@ export default function FocusZoneScreen() {
         onPress: () => {
           const updated = places.filter((p) => p.id !== selectedPlace.id);
           savePlaces(updated);
+          setSelectedPlace(null); // [추가] 선택 초기화
         },
       },
     ]);
@@ -262,7 +267,6 @@ export default function FocusZoneScreen() {
             </Text>
           </View>
 
-          {/* 🔎 작은 지도 아이콘: 누르면 해당 장소로 카메라 이동 */}
           <TouchableOpacity
             onPress={() => moveCameraToPlace(item)}
             style={{ paddingHorizontal: 8, paddingVertical: 4, marginRight: 4 }}
@@ -271,35 +275,16 @@ export default function FocusZoneScreen() {
             <Ionicons name="navigate-outline" size={20} color="#3B82F6" />
           </TouchableOpacity>
 
-          {/* ··· 메뉴 */}
-          <Popover
-            isVisible={menuVisible && selectedPlace?.id === item.id}
-            onRequestClose={() => setMenuVisible(false)}
-            from={
-              <TouchableOpacity
-                onPress={() => {
-                  setSelectedPlace(item);
-                  setMenuVisible(true);
-                }}
-              >
-                <Ionicons name="ellipsis-vertical" size={20} color="#9CA3AF" />
-              </TouchableOpacity>
-            }
-            placement="bottom"
-            popoverStyle={styles.popoverStyle}
-            backgroundStyle={{ backgroundColor: "transparent" }}
+          {/* [수정] Popover 대신 TouchableOpacity + Modal 사용 */}
+          <TouchableOpacity
+            onPress={() => {
+              setSelectedPlace(item);
+              setMenuVisible(true);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <View style={styles.popoverContent}>
-              <TouchableOpacity style={styles.menuItem} onPress={handleEdit}>
-                <Text style={styles.menuText}>수정</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.menuItem} onPress={handleDelete}>
-                <Text style={[styles.menuText, { color: "#EF4444" }]}>
-                  삭제
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </Popover>
+            <Ionicons name="ellipsis-vertical" size={20} color="#9CA3AF" />
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     </View>
@@ -332,11 +317,8 @@ export default function FocusZoneScreen() {
         showsMyLocationButton={false}
         userLocationAnnotationTitle="내 위치"
         userLocationPriority="high"
-        followsUserLocation={true} // true로 하면 자동으로 따라감
-        
-
+        followsUserLocation={true}
       >
-        {/* --- MODIFIED: 항상 모든 장소를 지도에 표시 --- */}
         {places.map((p) => (
           <Circle
             key={p.id}
@@ -349,33 +331,17 @@ export default function FocusZoneScreen() {
             }
           />
         ))}
-        
-        {/* 현재 위치 Circle 제거 */}
       </MapView>
 
-      {/* --- MODIFIED: 전체 활성화/비활성화 버튼으로 변경 --- */}
-      <TouchableOpacity
-        style={styles.toggleButton}
-        onPress={toggleAllActive}
-        activeOpacity={0.8}
-      >
-        <Ionicons
-          name={isAnyPlaceActive ? "flash-off-outline" : "flash-outline"}
-          size={20}
-          color="#fff"
-        />
-        <Text style={styles.toggleButtonText}>
-          {isAnyPlaceActive ? "전체 비활성화" : "전체 활성화"}
-        </Text>
-      </TouchableOpacity>
-
-      {/* 현재 위치 버튼 */}
+      {/* [수정] 현재 위치 버튼만 지도에 남김 */}
       <TouchableOpacity
         style={styles.locationButton}
         onPress={getCurrentLocation}
         activeOpacity={0.8}
       >
-        <Ionicons name="locate" size={25} color="#2E82FF" />
+        <View style={styles.locationButtonInner}>
+          <Ionicons name="navigate" size={22} color="#fff" />
+        </View>
       </TouchableOpacity>
 
       {/* 하단 시트 */}
@@ -392,10 +358,33 @@ export default function FocusZoneScreen() {
         <BottomSheetView style={styles.sheetContent}>
           <View style={styles.headerRow}>
             <Text style={styles.title}>집중장소</Text>
-            <Text style={styles.countText}>
-              {places.filter((p) => p.isActive).length}/{places.length}
-            </Text>
+            <View style={styles.headerButtons}>
+              <Text style={styles.countText}>
+                {places.filter((p) => p.isActive).length}/{places.length}
+              </Text>
+              
+              <TouchableOpacity
+                style={styles.toggleButton}
+                onPress={toggleAllActive}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={isAnyPlaceActive ? "flash-off" : "flash"}
+                  size={16}
+                  color="#fff"
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={goToAdd}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
+
           <FlatList
             data={places}
             keyExtractor={(item) => item.id}
@@ -407,60 +396,71 @@ export default function FocusZoneScreen() {
         </BottomSheetView>
       </BottomSheet>
 
-      {/* 플로팅 추가 버튼 */}
-      <TouchableOpacity style={styles.fab} onPress={goToAdd}>
-        <Ionicons name="add" size={32} color="#fff" />
-      </TouchableOpacity>
+      {/* [추가] 메뉴 Modal */}
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setMenuVisible(false)}
+        >
+          <View style={styles.menuModal}>
+            <TouchableOpacity
+              style={styles.menuModalItem}
+              onPress={handleEdit}
+            >
+              <Ionicons name="create-outline" size={20} color="#222" />
+              <Text style={styles.menuModalText}>수정</Text>
+            </TouchableOpacity>
+            <View style={styles.menuDivider} />
+            <TouchableOpacity
+              style={styles.menuModalItem}
+              onPress={handleDelete}
+            >
+              <Ionicons name="trash-outline" size={20} color="#EF4444" />
+              <Text style={[styles.menuModalText, { color: "#EF4444" }]}>
+                삭제
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 9) STYLES
-// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  toggleButton: {
-    position: "absolute",
-    top: 60,
-    left: 16,
-    backgroundColor: "rgba(37, 99, 235, 0.9)",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-    zIndex: 1000,
-  },
-  toggleButtonText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
-    marginLeft: 6,
-  },
-
+  // [수정] 내 위치 버튼 - 우측 상단으로 복구
   locationButton: {
     position: "absolute",
-    top: 60,
+    top: 16,
     right: 16,
-    height: 50,
-    width: 50,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 25,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
     zIndex: 1000,
+  },
+  locationButtonInner: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#2563EB",
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   bottomSheet: {
@@ -469,16 +469,49 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
   },
-  sheetContent: { padding: 12 },
+  sheetContent: { padding: 16 },
 
+  // [수정] 헤더 스타일
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 14,
+    marginBottom: 16,
   },
-  title: { fontSize: 17, fontWeight: "bold", color: "#222" },
-  countText: { fontSize: 14, color: "#2563EB", fontWeight: "600" },
+  title: { fontSize: 18, fontWeight: "bold", color: "#222" },
+  
+  // [추가] 헤더 버튼 그룹
+  headerButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  countText: { 
+    fontSize: 14, 
+    color: "#6B7280", 
+    fontWeight: "600",
+    marginRight: 4,
+  },
+
+  // [추가] 전체 활성화/비활성화 버튼
+  toggleButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#2563EB",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // [추가] + 버튼
+  addButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#22C55E",
+    justifyContent: "center",
+    alignItems: "center",
+  },
 
   cardContainer: { marginBottom: 8 },
   card: {
@@ -493,23 +526,6 @@ const styles = StyleSheet.create({
   selectedCard: {
     borderColor: "#22C55E",
     backgroundColor: "#F0FDF4",
-  },
-
-  fab: {
-    position: "absolute",
-    right: 24,
-    bottom: 32,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#2563EB",
-    alignItems: "center",
-    justifyContent: "center",
-    elevation: 6,
-    shadowColor: "#2563EB",
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
   },
 
   emptyContainer: {
@@ -531,17 +547,40 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  popoverStyle: { backgroundColor: "transparent" },
-  popoverContent: {
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    paddingVertical: 4,
-    minWidth: 100,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 6,
+  // [제거] popoverStyle, popoverContent 제거
+  // [추가] Modal 스타일
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  menuItem: { paddingVertical: 12, paddingHorizontal: 30 },
-  menuText: { fontSize: 14, color: "#222" },
+  menuModal: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    minWidth: 180,
+    paddingVertical: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  menuModalItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  menuModalText: {
+    fontSize: 15,
+    color: "#222",
+    fontWeight: "500",
+  },
+  menuDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "#E5E7EB",
+    marginHorizontal: 12,
+  },
 });

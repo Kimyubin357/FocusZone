@@ -290,12 +290,15 @@ export default function GroupZoneMap() {
             })}
         </MapView>
 
+        {/* [수정] 내 위치 버튼 - 우측 상단 */}
         <TouchableOpacity
           style={styles.locationButton}
           onPress={getCurrentLocation}
           activeOpacity={0.8}
         >
-          <Ionicons name="locate" size={25} color="#0D4093" />
+          <View style={styles.locationButtonInner}>
+            <Ionicons name="navigate" size={22} color="#fff" />
+          </View>
         </TouchableOpacity>
 
         <BottomSheet
@@ -337,22 +340,31 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
+  // [수정] 내 위치 버튼 - 우측 상단으로 복구
   locationButton: {
     position: "absolute",
     top: 16,
     right: 16,
-    height: 50,
-    width: 50,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 25,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
     zIndex: 1000,
+  },
+  locationButtonInner: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#2563EB",
+    justifyContent: "center",
+    alignItems: "center",
   },
   bottomSheet: {
     shadowColor: "#000",
