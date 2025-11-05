@@ -86,7 +86,7 @@ export default function JoinGroupPage() {
       }
 
       const groupDoc = snapshot.docs[0];
-      const groupId = groupDoc.id;
+      const groupId = groupDoc.id; 
       const groupData = groupDoc.data();
 
       if (groupData.ownerId === uid) {
