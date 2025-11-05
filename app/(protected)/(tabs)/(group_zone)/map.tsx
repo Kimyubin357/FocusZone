@@ -1,6 +1,3 @@
-// app/(protected)/(tabs)/(group_zone)/map.tsx
-// ──────────────────────────────────────────────────────────────────────────────
-// 0) IMPORTS
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import * as Location from "expo-location";
@@ -23,62 +20,35 @@ import MapView, {
 } from "react-native-maps";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// ... (파일 상단부 임포트 및 유틸 함수들은 모두 동일) ...
 // ──────────────────────────────────────────────────────────────────────────────
 // 1) CONSTANTS / TYPES
 // ──────────────────────────────────────────────────────────────────────────────
-// ⚠️ 실제에선 .env 등으로 키 숨겨서 import 하세요
-// EXPO_PUBLIC_GOOGLE_MAPS_API_KEY 사용 권장
-
-// const GOOGLE_MAP_API_KEY = "AIzaSyA97bCCeZh4eR_q2fJAjm5i55YqyVdJZ6g";
-const GOOGLE_WEB_API_KEY = "AIzaSyAvid2EBP0GgrNfzKcF7goUZlQWNbrbF94";
-type SearchPlace = {
-  id: string;
-  place_name: string;
-  x: string; // lng
-  y: string; // lat
-  road_address_name?: string;
-  address_name?: string;
-};
-type GooglePlace = {
-  place_id: string;
-  name: string;
-  formatted_address: string;
-  geometry: {
-    location: {
-      lat: number;
-      lng: number;
-    };
-  };
-}
+const GOOGLE_WEB_API_KEY = "AIzaSyAvid2EBP0GgrNfzKcF7goUZlQWNbrbF94"; // ⭐️ 키는 .env 등으로 숨기세요
+type SearchPlace = { id: string; place_name: string; x: string; y: string; road_address_name?: string; address_name?: string; };
+type GooglePlace = { /* ... */ };
 // ──────────────────────────────────────────────────────────────────────────────
-// 2) PURE UTILS (좌표 변환 / Kakao API 호출 / 스냅)
-//    - 컴포넌트 바깥에 두어 재생성 방지 & 가독성 ↑
+// 2) PURE UTILS (좌표 변환 / API 호출 / 스냅)
 // ──────────────────────────────────────────────────────────────────────────────
-// <미터 → 위도/경도 변화량 변환>
 const metersToLatDelta = (m: number) => m / 111320;
 const metersToLngDelta = (m: number, lat: number) =>
   m / (111320 * Math.cos((lat * Math.PI) / 180));
-
-/** 좌표 → 도로명 주소만 (없으면 null) */
-// Google Geocoding API 사용
+// ... (getRoadAddressFromCoords, findNearestRoadAddress 함수 동일) ...
 async function getRoadAddressFromCoords(latitude: number, longitude: number) {
   try {
     const res = await fetch(
       `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&language=ko&key=${GOOGLE_WEB_API_KEY}`
     );
+    // ... (함수 내용 동일)
     const data = await res.json();
     const first = data?.results?.[0];
     if (!first) return null;
-
-    // 주소 컴포넌트에서 필요한 부분만 추출
     const comps = first.address_components || [];
     const sido = comps.find(c => c.types.includes("administrative_area_level_1"))?.long_name || "";
     const sigungu = comps.find(c => c.types.includes("locality"))?.long_name || "";
     const gu = comps.find(c => c.types.includes("sublocality_level_1"))?.long_name || "";
     const road = comps.find(c => c.types.includes("route"))?.long_name || "";
     const building = comps.find(c => c.types.includes("premise"))?.long_name || "";
-
-    // 조합
     const simpleAddress = [sido, sigungu, gu, road, building].filter(Boolean).join(" ");
     return simpleAddress || first.formatted_address || null;
   } catch (e) {
@@ -86,26 +56,13 @@ async function getRoadAddressFromCoords(latitude: number, longitude: number) {
     return null;
   }
 }
-
-/** 주변 ±radiusM(기본 25m) 8방 탐색해서 가장 가까운 도로명 좌표를 스냅 */
-// <도로 위에 가장 가까운 좌표를 찾기 위해 8방 탐색>
 async function findNearestRoadAddress(
   lat: number,
   lng: number,
   radiusM = 25
 ): Promise<{ road: string; lat: number; lng: number } | null> {
-  const candidates = [
-    [0, 0],
-    [radiusM, 0],
-    [-radiusM, 0],
-    [0, radiusM],
-    [0, -radiusM],
-    [radiusM, radiusM],
-    [radiusM, -radiusM],
-    [-radiusM, radiusM],
-    [-radiusM, -radiusM],
-  ];
-
+  // ... (함수 내용 동일)
+  const candidates = [ [0, 0], [radiusM, 0], [-radiusM, 0], [0, radiusM], [0, -radiusM], [radiusM, radiusM], [radiusM, -radiusM], [-radiusM, radiusM], [-radiusM, -radiusM], ];
   for (const [dm, dn] of candidates) {
     const tryLat = lat + metersToLatDelta(dn);
     const tryLng = lng + metersToLngDelta(dm, lat);
@@ -114,18 +71,17 @@ async function findNearestRoadAddress(
   }
   return null;
 }
-
 // ──────────────────────────────────────────────────────────────────────────────
 /** 3) COMPONENT */
 // ──────────────────────────────────────────────────────────────────────────────
-// <구글지도를 사용하며 Google Places/Geocoding으로 검색 및 역지오코딩>
 export default function KakaoMapScreen() {
   // 3-1) NAV / REFS / PARAMS
   const router = useRouter();
-  const params = useLocalSearchParams(); // add.tsx에서 전달된 파라미터들
-  const mapRef = useRef<MapView>(null); //지도 움직 이는 용도
+  const params = useLocalSearchParams(); 
+  const mapRef = useRef<MapView>(null); 
 
   // 3-2) STATE: 지도/선택/표시/검색
+  // ... (parseNumber, initialLat, initialLng, region, selectedLocation 등 상태 동일) ...
   const parseNumber = (v: any): number | null => {
     if (v === null || v === undefined) return null;
     const s = String(v).trim();
@@ -133,63 +89,54 @@ export default function KakaoMapScreen() {
     const n = Number(s);
     return Number.isFinite(n) ? n : null;
   };
-
   const initialLat = parseNumber(params.latitude) ?? 37.5665;
   const initialLng = parseNumber(params.longitude) ?? 126.978;
-
   const [region, setRegion] = useState<Region>({
-    // 초기 지도 위치
     latitude: initialLat,
     longitude: initialLng,
-    latitudeDelta: 0.004, // 확대 수준
+    latitudeDelta: 0.004,
     longitudeDelta: 0.004,
   });
-
-
   const [selectedLocation, setSelectedLocation] = useState({
-    // 선택된 위치
     latitude: initialLat,
     longitude: initialLng,
   });
-
   const isValidCoord = (lat: any, lng: any) =>
     Number.isFinite(lat) && Number.isFinite(lng);
-
   const handleRegionChangeComplete = (next: Region) => {
-    if (
-      isValidCoord(next.latitude, next.longitude) &&
-      Number.isFinite(next.latitudeDelta) &&
-      Number.isFinite(next.longitudeDelta)
-    ) {
+    if ( isValidCoord(next.latitude, next.longitude) && Number.isFinite(next.latitudeDelta) && Number.isFinite(next.longitudeDelta) ) {
       setRegion(next);
     }
   };
-
   const [radius, setRadius] = useState(
-    // 반경
-    params.radius ? Number(params.radius) : 100 // 기본 100m
+    params.radius ? Number(params.radius) : 100
   );
-  const [reverse, setReverse] = useState(false); // 반경 밖 여부
-  const [address, setAddress] = useState<string>( // 도로명 주소
+  const [reverse, setReverse] = useState(false);
+  const [address, setAddress] = useState<string>(
     (params.address as string) || ""
   );
-
-  // 검색 상태
-  const [query, setQuery] = useState(""); // 검색어
-  const [searching, setSearching] = useState(false); // 검색 중인지 확인
-  const [results, setResults] = useState<SearchPlace[]>([]); // 검색 결과
-  const [showResults, setShowResults] = useState(false); // 결과 표시 여부
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState<SearchPlace[]>([]);
+  const [showResults, setShowResults] = useState(false);
 
   // 3-3) OPTIONS
-  const enableSnapToRoad = true; // 도로 스냅 보정 사용(검색을 위한)
+  const enableSnapToRoad = true;
 
   // ──────────────────────────────────────────────────────────────────────────
   // 3-4) EFFECTS: 초기 로드 시 도로명 주소 보정
   // ──────────────────────────────────────────────────────────────────────────
   useEffect(() => {
+    // ... (useEffect 로직 동일) ...
     (async () => {
+      // ⭐️ address가 이미 params로 전달된 경우 (즉, add.tsx에서 설정된 값)
+      // 맵 로드 시 역지오코딩을 다시 실행하지 않고 해당 주소를 사용
+      if (address) {
+        return;
+      }
+
+      // ⭐️ params에 address가 없는 경우 (최초 진입 또는 좌표만 있는 경우)
       const road = await getRoadAddressFromCoords(
-        // road: 도로명 주소 getRoadAddressFromCoords 함수(카카오지도에서 묻는 함수) 사용
         selectedLocation.latitude,
         selectedLocation.longitude
       );
@@ -197,10 +144,9 @@ export default function KakaoMapScreen() {
         setAddress(road);
       } else if (enableSnapToRoad) {
         const snapped = await findNearestRoadAddress(
-          // 가장 가까운 도로명 좌표를 스냅
           selectedLocation.latitude,
           selectedLocation.longitude,
-          25 // 반경 25m 내에서 탐색
+          25
         );
         if (snapped) {
           setSelectedLocation({
@@ -212,34 +158,23 @@ export default function KakaoMapScreen() {
         }
       }
     })();
-    // 얘야 이번 한줄은 그냥 넘어가 주세요 eslint님
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // ⭐️ deps [] 유지
 
   // ──────────────────────────────────────────────────────────────────────────
   // 3-5) HANDLERS — 지도/현재위치/검색/저장 등
   // ──────────────────────────────────────────────────────────────────────────
-  /** 지도 위치로 부드럽게 이동 */
   const animateTo = (lat: number, lng: number) => {
-    const next: Region = {
-      latitude: lat,
-      longitude: lng,
-      latitudeDelta: 0.008,
-      longitudeDelta: 0.008,
-    };
+    // ... (함수 내용 동일) ...
+    const next: Region = { latitude: lat, longitude: lng, latitudeDelta: 0.008, longitudeDelta: 0.008, };
     setRegion(next);
     mapRef.current?.animateToRegion(next, 250);
   };
-
-  /** 반지름 슬라이더 */
   const handleSliderChange = (value: number) => setRadius(value);
-
-  /** 공통 적용: 좌표 → (도로명만) 주소 확정 + 지도/상태 업데이트 */
   const applyAddressByCoords = async (lat: number, lng: number) => {
+    // ... (함수 내용 동일) ...
     let road = await getRoadAddressFromCoords(lat, lng);
     let fLat = lat;
     let fLng = lng;
-
     if (!road && enableSnapToRoad) {
       const snapped = await findNearestRoadAddress(lat, lng, 25);
       if (snapped) {
@@ -248,20 +183,17 @@ export default function KakaoMapScreen() {
         fLng = snapped.lng;
       }
     }
-
     if (!road) {
       Alert.alert("도로명 주소 필요", "도로 위 근처로 이동해 다시 눌러주세요.");
       return false;
     }
-
     setSelectedLocation({ latitude: fLat, longitude: fLng });
     animateTo(fLat, fLng);
     setAddress(road);
     return true;
   };
-
-  /** 지도 탭 */
   const onMapPress = async (e: MapPressEvent) => {
+    // ... (함수 내용 동일) ...
     const { latitude, longitude } = e.nativeEvent.coordinate;
     const ok = await applyAddressByCoords(latitude, longitude);
     if (ok) {
@@ -269,18 +201,15 @@ export default function KakaoMapScreen() {
       Keyboard.dismiss();
     }
   };
-
-  /** 현재 위치로 이동 */
   const getCurrentLocation = async () => {
+    // ... (함수 내용 동일) ...
     try {
-      // 수정 모드: 저장 좌표 우선
       if (params.editMode === "true" && params.latitude && params.longitude) {
         const savedLat = Number(params.latitude);
         const savedLng = Number(params.longitude);
         const ok = await applyAddressByCoords(savedLat, savedLng);
         if (ok) return;
       }
-
       const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
@@ -292,26 +221,16 @@ export default function KakaoMapScreen() {
       Alert.alert("오류", "현재 위치를 가져올 수 없습니다.");
     }
   };
-
-  /** Google Places: 장소명/주소 검색 (Text Search) */
   const searchPlaces = async () => {
+    // ... (함수 내용 동일) ...
     const q = query.trim();
-    if (!q) {
-      setResults([]);
-      setShowResults(false);
-      return;
-    }
+    if (!q) { setResults([]); setShowResults(false); return; }
     try {
       setSearching(true);
-
       const lat = region.latitude;
       const lng = region.longitude;
       const radius = 1500;
-
-      const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&keyword=${encodeURIComponent(
-        q
-      )}&language=ko&region=KR&key=${GOOGLE_WEB_API_KEY}`;
-
+      const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&keyword=${encodeURIComponent(q)}&language=ko&region=KR&key=${GOOGLE_WEB_API_KEY}`;
       const res = await fetch(url);
       const json = await res.json();
       if (json.status !== "OK") {
@@ -319,7 +238,6 @@ export default function KakaoMapScreen() {
         Alert.alert("오류", "검색에 실패했습니다.");
         return;
       }
-
       const mapped: SearchPlace[] = json.results.map((p: any) => ({
         id: p.place_id,
         place_name: p.name,
@@ -328,7 +246,6 @@ export default function KakaoMapScreen() {
         road_address_name: p.vicinity,
         address_name: p.vicinity,
       }));
-
       setResults(mapped);
       setShowResults(true);
       Keyboard.dismiss();
@@ -339,9 +256,8 @@ export default function KakaoMapScreen() {
       setSearching(false);
     }
   };
-
-  /** 검색 결과 선택 → 좌표로 확정(도로명만) */
   const selectResult = async (item: SearchPlace) => {
+    // ... (함수 내용 동일) ...
     const lat = Number(item.y);
     const lng = Number(item.x);
     const ok = await applyAddressByCoords(lat, lng);
@@ -349,6 +265,7 @@ export default function KakaoMapScreen() {
   };
 
   const handleContinue = () => {
+    // ... (함수 내용 동일) ...
     // 1. 유효성 검사
     if (!address || address === "도로명 주소를 선택하세요") {
       Alert.alert("안내", "유효한 주소를 선택해주세요.");
@@ -362,39 +279,45 @@ export default function KakaoMapScreen() {
     }
 
     // 2. add.tsx로 돌려보낼 파라미터 준비
-    const returnParams: Record<string, string> = {
-      // 2-1. 맵에서 선택한 새로운 값
+    const returnParams: Record<string, any> = { 
+      ...params,
+
+      // 2-2. ⭐️ 맵에서 수정한 값으로 덮어쓰기
       address: address,
       latitude: selectedLocation.latitude.toString(),
       longitude: selectedLocation.longitude.toString(),
       radius: radius.toString(),
-
-      // 2-2. add.tsx가 상태 유지를 위해 필요한 기존 값들 (그대로 전달)
-      // (params.name은 add.tsx가 다시 로드될 때 groupName 상태를 복원하기 위해 필수)
-      name: (params.name as string) ?? "새로운 그룹장소",
     };
-
-    // 2-3. 수정 모드 정보가 있었다면 그것도 포함
-    if (params.editMode === "true" && params.placeId) {
-      returnParams.editMode = "true";
-      returnParams.placeId = params.placeId as string;
-    }
-
+    
     // 3. router.replace를 사용해 'add.tsx'로 파라미터를 들고 복귀
-    // (map.tsx를 스택에서 제거하고 add.tsx를 새 파라미터로 로드)
     router.replace({
       pathname: "/(protected)/(tabs)/(group_zone)/add",
       params: returnParams,
     });
   };
 
+  // ⭐️ [추가] 수동으로 'add.tsx'로 돌아가는 함수
+  const handleGoBack = () => {
+    // 맵에서 아무것도 저장하지 않고,
+    // add.tsx에서 받았던 params를 그대로 들고 add.tsx로 복귀
+    router.replace({
+      pathname: "/(protected)/(tabs)/(group_zone)/add",
+      params: params, // ⭐️ add.tsx에서 받은 params 그대로 반환
+    });
+  };
+  
   // ──────────────────────────────────────────────────────────────────────────
   // 3-6) RENDER
   // ──────────────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
-      {/* 검색 바 */}
+      {/* ⭐️ [수정] 검색 바 */}
       <View className="searchbar" style={styles.searchBarWrap}>
+        {/* ⭐️ [추가] 수동 뒤로가기 버튼 */}
+        <TouchableOpacity onPress={handleGoBack} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={22} color="#555" />
+        </TouchableOpacity>
+
         <Ionicons
           name="search"
           size={18}
@@ -404,6 +327,7 @@ export default function KakaoMapScreen() {
         <TextInput
           style={styles.searchInput}
           value={query}
+          // ... (onChangeText 등 나머지 props 동일)
           onChangeText={(t) => {
             setQuery(t);
             if (!t) {
@@ -438,7 +362,7 @@ export default function KakaoMapScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 지도 */}
+      {/* ... (MapView, 검색 결과, 현재 위치 버튼, 하단 패널 JSX 모두 동일) ... */}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
@@ -453,7 +377,6 @@ export default function KakaoMapScreen() {
         userLocationPriority="high"
         followsUserLocation={true}
       >
-        {/* 선택 영역(원) */}
         {isValidCoord(selectedLocation.latitude, selectedLocation.longitude) && (
           <>
             <Circle
@@ -476,8 +399,6 @@ export default function KakaoMapScreen() {
           </>
         )}
       </MapView>
-
-      {/* 검색 결과 리스트 */}
       {showResults && results.length > 0 && (
         <View style={styles.resultSheet}>
           <FlatList
@@ -505,8 +426,6 @@ export default function KakaoMapScreen() {
           />
         </View>
       )}
-
-      {/* 현재 위치 버튼 */}
       <TouchableOpacity
         style={styles.locationButton}
         onPress={getCurrentLocation}
@@ -514,8 +433,6 @@ export default function KakaoMapScreen() {
       >
         <Ionicons name="navigate-outline" size={22} color="#000" />
       </TouchableOpacity>
-
-      {/* 하단 패널 */}
       <View style={styles.panel}>
         <View style={styles.row}>
           <Text style={styles.label}>도로명 주소</Text>
@@ -523,12 +440,10 @@ export default function KakaoMapScreen() {
             {address || "도로명 주소를 선택하세요"}
           </Text>
         </View>
-
         <View style={styles.row}>
           <Text style={styles.label}>반지름</Text>
           <Text style={styles.value}>{radius}m</Text>
         </View>
-
         <Slider
           style={{ width: "100%", height: 40 }}
           minimumValue={10}
@@ -537,7 +452,6 @@ export default function KakaoMapScreen() {
           value={radius}
           onValueChange={handleSliderChange}
         />
-
         <TouchableOpacity style={styles.button} onPress={handleContinue}>
           <Text style={styles.buttonText}>계속하기</Text>
         </TouchableOpacity>
@@ -552,6 +466,7 @@ export default function KakaoMapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   simpleMarker: {
+  // ... (스타일 동일)
     width: 32,
     height: 32,
     justifyContent: "center",
@@ -560,6 +475,7 @@ const styles = StyleSheet.create({
 
   // 검색 바
   searchBarWrap: {
+  // ... (스타일 동일)
     position: "absolute",
     top: 30,
     left: 16,
@@ -577,7 +493,12 @@ const styles = StyleSheet.create({
     elevation: 4,
     zIndex: 1100,
   },
+  // ⭐️ [추가] 뒤로가기 버튼 스타일
+  backBtn: {
+    paddingRight: 10, // 아이콘과 검색 아이콘 사이 간격
+  },
   searchInput: {
+  // ... (스타일 동일)
     flex: 1,
     fontSize: 14,
     color: "#222",
@@ -585,6 +506,7 @@ const styles = StyleSheet.create({
   },
   clearBtn: { paddingHorizontal: 6, paddingVertical: 6 },
   searchBtn: {
+  // ... (스타일 동일)
     marginLeft: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -593,7 +515,7 @@ const styles = StyleSheet.create({
   },
   searchBtnText: { color: "#fff", fontSize: 12, fontWeight: "600" },
 
-  // 결과 시트
+  // ... (resultSheet, locationButton, panel 등 나머지 스타일 모두 동일) ...
   resultSheet: {
     position: "absolute",
     top: 60,
@@ -613,8 +535,6 @@ const styles = StyleSheet.create({
   resultItem: { paddingVertical: 8 },
   resultTitle: { fontSize: 14, color: "#111", fontWeight: "600" },
   resultSub: { fontSize: 12, color: "#666", marginTop: 2 },
-
-  // 현재 위치 버튼
   locationButton: {
     position: "absolute",
     top: 90,
@@ -631,8 +551,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     zIndex: 1000,
   },
-
-  // 하단 패널
   panel: {
     position: "absolute",
     bottom: 60,

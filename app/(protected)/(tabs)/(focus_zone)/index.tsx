@@ -26,7 +26,6 @@ import {
 import MapView, { Circle, PROVIDER_GOOGLE, Region } from "react-native-maps";
 import Popover from "react-native-popover-view";
 // --- ADDED: locationService 임포트 ---
-import { startLocationTask, stopLocationTask } from "../../../../src/services/location/locationService";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2) TYPES
@@ -83,22 +82,7 @@ export default function FocusZoneScreen() {
       loadPlaces();
     }, [])
   );
-  // --- ADDED: places 상태 변경에 따른 백그라운드 서비스 제어 ---
-  useEffect(() => {
-    // 활성화된 장소가 하나라도 있는지 확인
-    const hasActivePlace = places.some(p => p.isActive);
-
-    if (hasActivePlace) {
-      console.log("활성화된 장소가 있어 위치 추적을 시작합니다.");
-      startLocationTask();
-    } else {
-      console.log("활성화된 장소가 없어 위치 추적을 중지합니다.");
-      stopLocationTask();
-    }
-  }, [places]); // places 배열이 변경될 때마다 이 로직을 다시 실행
-
   
-
   // 앱 시작 시 현재 위치 가져오기
   useEffect(() => {
     (async () => {

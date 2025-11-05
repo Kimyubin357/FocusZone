@@ -10,7 +10,7 @@ const LOCATION_TASK_NAME = 'background-location-task';
 const LOCK_STATE_KEY = 'currentLockState'; // 현재 잠금 상태를 저장할 키
 const MIN_ACCURACY_THRESHOLD = 50; // 50m보다 오차 반경이 큰 데이터는 무시
 
-// 데이터 타입 정의 (index.tsx와 일치시키는 것이 좋습니다)
+// 데이터 타입 정의
 type Place = {
   id: string;
   name: string;
