@@ -58,6 +58,14 @@ export default function JoinGroupPage() {
       
       const groupDoc = snapshot.docs[0];
       const groupId = groupDoc.id;
+      const groupData = groupDoc.data();
+
+      if (groupData.ownerId === user.uid) {
+      Alert.alert("알림", "본인이 생성한 그룹입니다.\n그룹 목록에서 확인하세요.");
+      router.replace("/(protected)/(tabs)/(group_zone)/group_zone");
+
+      return;
+      }
       
       // 3. 이미 멤버인지 확인
       const memberRef = doc(db, "groupLocations", groupId, "members", user.uid);
@@ -81,7 +89,7 @@ export default function JoinGroupPage() {
         batch.set(memberRef, {
           role: "member",
           uid: user.uid,
-          displayName: displayName,
+          groupNickname: displayName,
           joinedAt: serverTimestamp(),
         });
 

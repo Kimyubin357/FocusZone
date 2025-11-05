@@ -39,6 +39,8 @@ type GroupItem = {
   memberCount: number; // [수정]
   activeDays?: number[]; // [0~6] = 일~토
   inviteCode?: string; // 초대 코드
+  ownerId?: string;
+  myRole?: string;
 };
 
 // 요일 라벨
@@ -55,9 +57,7 @@ const hexToRgba = (hex: string, alpha: number) => {
 
 export default function GroupZone() {
   const router = useRouter();
-  // 기본 색상 (라이트 테마 가정)
   
-
   const [list, setList] = useState<GroupItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -103,7 +103,13 @@ export default function GroupZone() {
         setList([]);
         return;
       }
-
+      const myRolesMap = new Map<string, string>();
+      memberDocsSnap.docs.forEach((doc) => {
+        const data = doc.data();
+        const groupId = doc.ref.parent.parent!.id;
+        const role = doc.data().role;
+        myRolesMap.set(groupId, role);
+      });
       // 3. 내가 속한 그룹들의 ID 목록 추출
       const myGroupIds = memberDocsSnap.docs.map(
         (doc) => doc.ref.parent.parent!.id // .../members/{autoId} -> .../members -> groupLocations/{groupId}
@@ -148,6 +154,8 @@ export default function GroupZone() {
           memberCount: data.memberCount ?? 0,
           activeDays: data.activeDays ?? [],
           inviteCode: data.inviteCode,
+          ownerId: data.ownerId, // [추가]
+          myRole: myRolesMap.get(doc.id), // [추가]
         };
       });
       setList(rows);
@@ -157,6 +165,9 @@ export default function GroupZone() {
   };
 
   const goToAdd = () => router.push("/(protected)/(tabs)/(group_zone)/add");
+  
+  // [추가] 지도 페이지로 이동
+  const goToMap = () => router.push("/(protected)/(tabs)/(group_zone)/group_zone_map");
 
   const onPressCardMenu = (
     id: string,
@@ -172,6 +183,14 @@ export default function GroupZone() {
 
   const onEdit = () => {
     if (!menuForId) return;
+    const group = list.find((item) => item.id === menuForId);
+    
+    // 권한 체크
+    if (group?.myRole !== "owner") {
+      Alert.alert("권한 없음", "그룹장만 수정할 수 있습니다.");
+      closeMenu();
+      return;
+    }
     router.push({
       pathname: "/(protected)/(tabs)/(group_zone)/add",
       params: { editMode: "true", placeId: menuForId },
@@ -197,14 +216,38 @@ export default function GroupZone() {
 
   const onDelete = async () => {
     if (!menuForId) return;
-    try {
-      await deleteDoc(doc(db, "groupLocations", menuForId));
-      setList((prev) => prev.filter((x) => x.id !== menuForId));
-    } catch (e) {
-      console.log("delete error", e);
-    } finally {
+    const group = list.find((item) => item.id === menuForId);
+    
+    // 권한 체크
+    if (group?.myRole !== "owner") {
+      Alert.alert("권한 없음", "그룹장만 삭제할 수 있습니다.");
       closeMenu();
+      return;
     }
+
+    Alert.alert(
+      "그룹 삭제",
+      "정말로 이 그룹을 삭제하시겠습니까?",
+      [
+        { text: "취소", style: "cancel", onPress: closeMenu },
+        {
+          text: "삭제",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, "groupLocations", menuForId));
+              setList((prev) => prev.filter((x) => x.id !== menuForId));
+              Alert.alert("완료", "그룹이 삭제되었습니다.");
+            } catch (e) {
+              console.log("delete error", e);
+              Alert.alert("오류", "삭제 중 문제가 발생했습니다.");
+            } finally {
+              closeMenu();
+            }
+          },
+        },
+      ]
+    );
   };
 
   // 앵커 기준 좌표 계산(화면 밖 보정)
@@ -239,84 +282,110 @@ export default function GroupZone() {
     />
   );
 const colors = {
-    background: "#FFFFFF",
-    card: "#F8F8F8",
-    text: "#111111",
-    muted: "#777777",
-    tint: "#0D4093",
-    border: "#E0E0E0",
-  };
-  const theme = "light"; // 다크모드 미사용 시 고정
-  return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: colors.background }]}
+  background: "#FFFFFF",
+  card: "#F8F8F8",
+  text: "#111111",
+  muted: "#777777",
+  tint: "#0D4093",
+  border: "#E0E0E0",
+};
+const theme = "light";
+
+return (
+  <SafeAreaView
+    style={[styles.safeArea, { backgroundColor: colors.background }]}
+  >
+    {loading ? (
+      <View style={styles.loader}>
+        <ActivityIndicator />
+      </View>
+    ) : (
+      <FlatList
+        data={list}
+        renderItem={renderItem}
+        keyExtractor={(it) => it.id}
+        ListEmptyComponent={renderEmpty}
+        contentContainerStyle={{ padding: 16, flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+      />
+    )}
+
+    {/* [수정] 지도 보기 토글 버튼 - 왼쪽 하단 */}
+    <TouchableOpacity
+      style={[styles.toggleButton, { backgroundColor: colors.tint }]}
+      onPress={goToMap}
+      activeOpacity={0.8}
     >
-      {loading ? (
-        <View style={styles.loader}>
-          <ActivityIndicator />
-        </View>
-      ) : (
-        <FlatList
-          data={list}
-          renderItem={renderItem}
-          keyExtractor={(it) => it.id}
-          ListEmptyComponent={renderEmpty}
-          contentContainerStyle={{ padding: 16, flexGrow: 1 }}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+      <Ionicons name="map-outline" size={20} color="#fff" />
+      <Text style={styles.toggleButtonText}>지도</Text>
+    </TouchableOpacity>
 
-      <TouchableOpacity
+    {/* + 버튼 */}
+    <TouchableOpacity
+      style={[
+        styles.fab,
+        { backgroundColor: colors.tint, shadowColor: colors.tint },
+      ]}
+      onPress={goToAdd}
+    >
+      <Ionicons name="add" size={32} color="#fff" />
+    </TouchableOpacity>
+
+    {/* 카드별 3점 메뉴 (앵커 위치에 표시) */}
+    <Modal
+      visible={!!menuForId}
+      transparent
+      animationType="fade"
+      onRequestClose={closeMenu}
+    >
+      <Pressable style={styles.menuBackdrop} onPress={closeMenu}>
+        <View />
+      </Pressable>
+      <View
         style={[
-          styles.fab,
-          { backgroundColor: colors.tint, shadowColor: colors.tint },
+          styles.menuBox,
+          {
+            position: "absolute",
+            top: menuTop,
+            left: menuLeft,
+            backgroundColor: colors.card,
+          },
         ]}
-        onPress={goToAdd}
       >
-        <Ionicons name="add" size={32} color="#fff" />
-      </TouchableOpacity>
-
-      {/* 카드별 3점 메뉴 (앵커 위치에 표시) */}
-      <Modal
-        visible={!!menuForId}
-        transparent
-        animationType="fade"
-        onRequestClose={closeMenu}
-      >
-        <Pressable style={styles.menuBackdrop} onPress={closeMenu}>
-          <View />
-        </Pressable>
-        <View
-          style={[
-            styles.menuBox,
-            {
-              position: "absolute",
-              top: menuTop,
-              left: menuLeft,
-              backgroundColor: colors.card,
-            },
-          ]}
-        >
-          <Pressable style={styles.menuItem} onPress={onEdit}>
-            <Text style={[styles.menuText, { color: colors.text }]}>
-              수정하기
-            </Text>
-          </Pressable>
+          {/* [추가] 그룹장만 수정/삭제 가능 */}
+          {list.find((item) => item.id === menuForId)?.myRole === "owner" ? (
+            <>
+              <Pressable style={styles.menuItem} onPress={onEdit}>
+                <Text style={[styles.menuText, { color: colors.text }]}>
+                  수정하기
+                </Text>
+              </Pressable>
+              <View
+                style={[styles.menuDivider, { backgroundColor: colors.border }]}
+              />
+            </>
+          ) : null}
+          
           <Pressable style={styles.menuItem} onPress={onShare}>
             <Text style={[styles.menuText, { color: colors.text }]}>
               공유하기
             </Text>
           </Pressable>
-          <View
-            style={[styles.menuDivider, { backgroundColor: colors.border }]}
-          />
-          <Pressable style={styles.menuItem} onPress={onDelete}>
-            <Text
-              style={[styles.menuText, { color: "#DC2626", fontWeight: "700" }]}
-            >
-              삭제하기
-            </Text>
-          </Pressable>
+
+          {list.find((item) => item.id === menuForId)?.myRole === "owner" ? (
+            <>
+              <View
+                style={[styles.menuDivider, { backgroundColor: colors.border }]}
+              />
+              <Pressable style={styles.menuItem} onPress={onDelete}>
+                <Text
+                  style={[styles.menuText, { color: "#DC2626", fontWeight: "700" }]}
+                >
+                  삭제하기
+                </Text>
+              </Pressable>
+            </>
+          ) : null}
         </View>
       </Modal>
     </SafeAreaView>
@@ -499,6 +568,29 @@ function GroupCard({
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   loader: { flex: 1, alignItems: "center", justifyContent: "center" },
+
+  // [수정] 토글 버튼 - 왼쪽 하단 (group_zone_map.tsx와 동일)
+  toggleButton: {
+    position: "absolute",
+    left: 24,
+    bottom: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    gap: 6,
+    elevation: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  toggleButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
 
   fab: {
     position: "absolute",
