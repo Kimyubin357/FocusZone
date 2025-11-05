@@ -1,6 +1,6 @@
 // app/(protected)/(tabs)/(group_zone)/group_zone.tsx — Minimal theming (preserve all UI/logic)
 import { Ionicons } from "@expo/vector-icons";
-import { useNetInfo } from "@react-native-community/netinfo";
+import NetInfo, { useNetInfo } from "@react-native-community/netinfo";
 import * as Clipboard from "expo-clipboard";
 import { Stack, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
@@ -72,7 +72,7 @@ function OfflineWarning({ onRetry }: { onRetry: () => void }) {
       <Text style={[styles.emptySubText, { color: colors.muted }]}>
         그룹장소 기능은 온라인 상태에서만 사용할 수 있습니다.
       </Text>
-      <TouchableOpacity onPress={onRetry} style={styles.retryButton}>
+      <TouchableOpacity onPress={() => onRetry()} style={styles.retryButton}>
         <Text style={styles.retryButtonText}>새로고침</Text>
       </TouchableOpacity>
     </View>
@@ -430,7 +430,7 @@ export default function GroupZone() {
           <ActivityIndicator />
         </View>
       ) : !isOnline ? ( // ⭐️ 로딩이 끝났는데 오프라인이면 경고
-        <OfflineWarning onRetry={() => netInfo.refresh()} />
+        <OfflineWarning onRetry={NetInfo.fetch} />
       ) : (
         <FlatList
           data={list}
@@ -571,9 +571,9 @@ function GroupCard({
         >
           {item.groupName || "그룹장소명"}
           {/* [추가] 비활성화 표시 */}
-          {item.isActive === false ? ( 
+          {item.isActive === false ? (
             <Text style={{ color: colors.muted, fontSize: 12 }}> (비활성화)</Text>
-          ) : null} 
+          ) : null}
         </Text>
         <TouchableOpacity
           ref={menuBtnRef as any}
