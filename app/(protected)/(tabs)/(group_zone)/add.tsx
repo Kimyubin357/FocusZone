@@ -191,6 +191,11 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
     }
   );
 
+  // [추가] 활성화 상태 관리
+  const [isActive, setIsActive] = useState<boolean>(
+    params.isActive === "true" ? true : true // 기본값: 활성화
+  );
+
   // ui states
 
   const [loadingDoc, setLoadingDoc] = useState<boolean>(isEditMode); // 수정모드면 처음에 로딩
@@ -278,6 +283,11 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
             Array.isArray(data.blockedAppCategories) ? data.blockedAppCategories : [];
           setBlockedAppCategories(initialCategories);
 
+          setIsActive(
+            params.isActive !== undefined
+              ? params.isActive === "true"
+              : data.isActive ?? true
+          );
         } catch (e: any) {
           Alert.alert("에러", String(e?.message ?? e));
         } finally {
@@ -359,6 +369,7 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
 
           blockedAppCategories: blockedAppCategories,
 
+          isActive: isActive, // [추가]
         };
 
         // [수정] 컬렉션명 "groupLocations"
@@ -451,6 +462,7 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
 
           blockedAppCategories: blockedAppCategories,
 
+          isActive: isActive, // [추가]
         };
 
         batch.set(newGroupRef, newGroupPayload);
@@ -553,6 +565,7 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
 
       currentCategories: JSON.stringify(blockedAppCategories),
 
+      isActive: isActive.toString(), // [추가]
     };
 
     // 값이 있을 때만 파라미터에 추가 (undefined 방지)
@@ -621,6 +634,7 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
 
         currentCategories: JSON.stringify(blockedAppCategories),
 
+        isActive: isActive.toString(), // [추가]
       },
 
     });
@@ -820,7 +834,6 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
             </Text>
 
           </View>
-
           {/* [추가] 차단 정책 선택 UI */}
 
           <View style={styles.card}>
@@ -1029,6 +1042,40 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
 
           </View>
 
+          {/* [추가] 활성화/비활성화 토글 */}
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.rowBetween}>
+              <View>
+                <Text style={[styles.label, { color: colors.text, fontSize: 15, marginBottom: 4 }]}>
+                  그룹장소 활성화
+                </Text>
+                <Text style={[styles.label, { color: colors.muted, fontSize: 12 }]}>
+                  비활성화 시 앱 차단이 작동하지 않습니다
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.toggleSwitch,
+                  isActive ? styles.toggleSwitchActive : styles.toggleSwitchInactive,
+                ]}
+                onPress={() => setIsActive(!isActive)}
+                activeOpacity={0.8}
+              >
+                <View
+                  style={[
+                    styles.toggleThumb,
+                    isActive ? styles.toggleThumbActive : styles.toggleThumbInactive,
+                  ]}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+
         </ScrollView>
 
       )}
@@ -1189,4 +1236,36 @@ const styles = StyleSheet.create({
 
   },
 
+  rowBetween: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  
+  // [추가] 토글 스위치 스타일
+  toggleSwitch: {
+    width: 51,
+    height: 31,
+    borderRadius: 15.5,
+    padding: 2,
+    justifyContent: "center",
+  },
+  toggleSwitchActive: {
+    backgroundColor: "#2563EB",
+  },
+  toggleSwitchInactive: {
+    backgroundColor: "#D1D5DB",
+  },
+  toggleThumb: {
+    width: 27,
+    height: 27,
+    borderRadius: 13.5,
+    backgroundColor: "#FFFFFF",
+  },
+  toggleThumbActive: {
+    alignSelf: "flex-end",
+  },
+  toggleThumbInactive: {
+    alignSelf: "flex-start",
+  },
 });

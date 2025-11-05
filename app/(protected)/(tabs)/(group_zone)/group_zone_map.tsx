@@ -4,13 +4,13 @@ import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import {
-    collection,
-    collectionGroup,
-    documentId,
-    getDocs,
-    onSnapshot, // [추가]
-    query,
-    where,
+  collection,
+  collectionGroup,
+  documentId,
+  getDocs,
+  onSnapshot,
+  query,
+  where,
 } from "firebase/firestore";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -29,6 +29,7 @@ type GroupItem = {
   latitude?: number;
   longitude?: number;
   radius?: number;
+  isActive?: boolean;
 };
 
 const DAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
@@ -50,7 +51,6 @@ export default function GroupZoneMap() {
     longitudeDelta: 0.008,
   });
 
-  // Firestore에서 그룹 데이터 로드
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       if (!user) {
@@ -66,7 +66,6 @@ export default function GroupZoneMap() {
     return unsub;
   }, []);
 
-  // [수정] onSnapshot으로 실시간 업데이트
   const loadGroups = async (uid: string) => {
     try {
       setLoading(true);
@@ -91,7 +90,6 @@ export default function GroupZoneMap() {
         where(documentId(), "in", myGroupIds)
       );
 
-      // [수정] onSnapshot으로 실시간 구독
       const unsubscribe = onSnapshot(groupsQuery, async (groupsSnap) => {
         const ownerIds = [
           ...new Set(
@@ -124,6 +122,7 @@ export default function GroupZoneMap() {
             latitude: data.latitude,
             longitude: data.longitude,
             radius: data.radius ?? 400,
+            isActive: data.isActive ?? true,
           };
         });
 
@@ -131,7 +130,6 @@ export default function GroupZoneMap() {
         setLoading(false);
       });
 
-      // cleanup 함수 반환
       return unsubscribe;
     } catch (e) {
       console.error("그룹 로드 오류:", e);
@@ -140,7 +138,6 @@ export default function GroupZoneMap() {
     }
   };
 
-  // 현재 위치로 카메라 이동
   useEffect(() => {
     (async () => {
       try {
@@ -197,17 +194,18 @@ export default function GroupZoneMap() {
     }
   };
 
-  // [추가] 그룹 카드 클릭 시 해당 위치로 이동
   const onGroupPress = (group: GroupItem) => {
     if (group.latitude && group.longitude) {
       animateTo(group.latitude, group.longitude, region.latitudeDelta, region.longitudeDelta);
     }
   };
 
-  // [추가] 그룹 카드 렌더링
   const renderGroupCard = ({ item }: { item: GroupItem }) => (
     <TouchableOpacity
-      style={styles.groupCard}
+      style={[
+        styles.groupCard,
+        { opacity: item.isActive === false ? 0.6 : 1 }
+      ]}
       onPress={() => onGroupPress(item)}
       activeOpacity={0.7}
     >
@@ -215,12 +213,20 @@ export default function GroupZoneMap() {
         <View style={styles.cardHeader}>
           <Text style={styles.groupName} numberOfLines={1}>
             {item.groupName}
+            {item.isActive === false && (
+              <Text style={{ fontSize: 12, color: "#999" }}> (비활성화)</Text>
+            )}
           </Text>
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </View>
         <Text style={styles.address} numberOfLines={1}>
           {item.address}
         </Text>
+        {item.isActive === false && (
+          <View style={styles.statusBadge}>
+            <Text style={styles.statusBadgeText}>비활성화</Text>
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -251,29 +257,37 @@ export default function GroupZoneMap() {
         >
           {groups
             .filter((g) => g.latitude && g.longitude)
-            .map((group) => (
-              <React.Fragment key={group.id}>
-                <Circle
-                  center={{
-                    latitude: group.latitude!,
-                    longitude: group.longitude!,
-                  }}
-                  radius={group.radius || 400}
-                  strokeWidth={2}
-                  strokeColor="#0D4093"
-                  fillColor="rgba(13, 64, 147, 0.2)"
-                />
-                {/* [수정] 일반 마커로 변경 */}
-                <Marker
-                  coordinate={{
-                    latitude: group.latitude!,
-                    longitude: group.longitude!,
-                  }}
-                  title={group.groupName}
-                  description={group.address}
-                />
-              </React.Fragment>
-            ))}
+            .map((group) => {
+              const isActive = group.isActive !== false;
+              const strokeColor = isActive ? "#0D4093" : "#9CA3AF";
+              const fillColor = isActive 
+                ? "rgba(13, 64, 147, 0.2)" 
+                : "rgba(156, 163, 175, 0.2)";
+              
+              return (
+                <React.Fragment key={group.id}>
+                  <Circle
+                    center={{
+                      latitude: group.latitude!,
+                      longitude: group.longitude!,
+                    }}
+                    radius={group.radius || 400}
+                    strokeWidth={2}
+                    strokeColor={strokeColor}
+                    fillColor={fillColor}
+                  />
+                  <Marker
+                    coordinate={{
+                      latitude: group.latitude!,
+                      longitude: group.longitude!,
+                    }}
+                    title={group.groupName}
+                    description={group.address}
+                    opacity={isActive ? 1 : 0.6}
+                  />
+                </React.Fragment>
+              );
+            })}
         </MapView>
 
         <TouchableOpacity
@@ -284,16 +298,6 @@ export default function GroupZoneMap() {
           <Ionicons name="locate" size={25} color="#0D4093" />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.toggleButton}
-          onPress={() => router.back()}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="list-outline" size={20} color="#fff" />
-          <Text style={styles.toggleButtonText}>목록</Text>
-        </TouchableOpacity>
-
-        {/* [수정] BottomSheet에 그룹 목록 표시 */}
         <BottomSheet
           ref={bottomSheetRef}
           index={0}
@@ -335,7 +339,7 @@ const styles = StyleSheet.create({
   },
   locationButton: {
     position: "absolute",
-    top: 60,
+    top: 16,
     right: 16,
     height: 50,
     width: 50,
@@ -349,28 +353,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
     zIndex: 1000,
-  },
-  toggleButton: {
-    position: "absolute",
-    left: 24,
-    bottom: 32,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    backgroundColor: "#0D4093",
-    gap: 6,
-    elevation: 4,
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  toggleButtonText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
   },
   bottomSheet: {
     shadowColor: "#000",
@@ -438,5 +420,18 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#6B7280",
     marginTop: 12,
+  },
+  statusBadge: {
+    alignSelf: "flex-start",
+    marginTop: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: "#FEE2E2",
+    borderRadius: 6,
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#DC2626",
   },
 });

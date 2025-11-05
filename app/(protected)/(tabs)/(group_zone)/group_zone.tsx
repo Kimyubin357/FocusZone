@@ -1,7 +1,7 @@
 // app/(protected)/(tabs)/(group_zone)/group_zone.tsx — Minimal theming (preserve all UI/logic)
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import { useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   collection,
@@ -36,14 +36,15 @@ type GroupItem = {
   groupName: string;
   address: string;
   ownerName: string;
-  userId: string; // 👈 [추가] 소유자(그룹장)의 UID
+  userId: string;
   memberIds?: string[];
   memberAvatars?: string[];
-  memberCount: number; // [수정]
-  activeDays?: number[]; // [0~6] = 일~토
-  inviteCode?: string; // 초대 코드
+  memberCount: number;
+  activeDays?: number[];
+  inviteCode?: string;
   ownerId?: string;
   myRole?: string;
+  isActive?: boolean; // [추가]
 };
 
 // 요일 라벨
@@ -158,6 +159,7 @@ export default function GroupZone() {
             inviteCode: data.inviteCode,
             ownerId: data.ownerId,
             myRole: myRolesMap.get(doc.id),
+            isActive: data.isActive, // [추가] 실시간 업데이트에 isActive 포함
           };
         });
         setList(rows);
@@ -320,6 +322,33 @@ export default function GroupZone() {
     <SafeAreaView
       style={[styles.safeArea, { backgroundColor: colors.background }]}
     >
+      <Stack.Screen
+        options={{
+          title: "그룹장소",
+        }}
+      />
+
+      {/* [수정] 헤더에 + 버튼과 지도 버튼 모두 배치 */}
+      <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>그룹장소</Text>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            onPress={goToAdd}
+            style={styles.headerButton}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="add-circle-outline" size={24} color={colors.tint} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={goToMap}
+            style={styles.headerButton}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="map-outline" size={24} color={colors.tint} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {loading ? (
         <View style={styles.loader}>
           <ActivityIndicator />
@@ -334,27 +363,6 @@ export default function GroupZone() {
           showsVerticalScrollIndicator={false}
         />
       )}
-
-      {/* [수정] 지도 보기 토글 버튼 - 왼쪽 하단 */}
-      <TouchableOpacity
-        style={[styles.toggleButton, { backgroundColor: colors.tint }]}
-        onPress={goToMap}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="map-outline" size={20} color="#fff" />
-        <Text style={styles.toggleButtonText}>지도</Text>
-      </TouchableOpacity>
-
-      {/* + 버튼 */}
-      <TouchableOpacity
-        style={[
-          styles.fab,
-          { backgroundColor: colors.tint, shadowColor: colors.tint },
-        ]}
-        onPress={goToAdd}
-      >
-        <Ionicons name="add" size={32} color="#fff" />
-      </TouchableOpacity>
 
       {/* 카드별 3점 메뉴 (앵커 위치에 표시) */}
       <Modal
@@ -473,16 +481,23 @@ function GroupCard({
     <View
       style={[
         styles.card,
-        { backgroundColor: colors.card, borderColor: colors.border },
+        { 
+          backgroundColor: colors.card, 
+          borderColor: colors.border,
+          opacity: item.isActive === false ? 0.6 : 1, // [추가] 비활성화 시 흐리게
+        },
       ]}
     >
-      {/* 상단: 제목 + 메뉴 */}
       <View style={styles.rowBetween}>
         <Text
           style={[styles.cardTitle, { color: colors.text }]}
           numberOfLines={1}
         >
           {item.groupName || "그룹장소명"}
+          {/* [추가] 비활성화 표시 */}
+          {item.isActive === false && (
+            <Text style={{ color: colors.muted, fontSize: 12 }}> (비활성화)</Text>
+          )}
         </Text>
         <TouchableOpacity
           ref={menuBtnRef as any}
@@ -492,7 +507,7 @@ function GroupCard({
           <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
         </TouchableOpacity>
       </View>
-
+      
       {/* 주소 */}
       <View style={[styles.row, { marginTop: 4 }]}>
         <Ionicons
@@ -594,45 +609,31 @@ function GroupCard({
 /* --------- 스타일 (레이아웃/치수만 유지; 색은 런타임 주입) --------- */
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  loader: { flex: 1, alignItems: "center", justifyContent: "center" },
-
-  // [수정] 토글 버튼 - 왼쪽 하단 (group_zone_map.tsx와 동일)
-  toggleButton: {
-    position: "absolute",
-    left: 24,
-    bottom: 32,
+  
+  // [추가] 헤더 스타일
+  header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
+    justifyContent: "space-between",
     paddingHorizontal: 16,
-    borderRadius: 20,
-    gap: 6,
-    elevation: 4,
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  toggleButtonText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "700",
   },
-
-  fab: {
-    position: "absolute",
-    right: 24,
-    bottom: 32,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  // [추가] 헤더 버튼들 컨테이너
+  headerButtons: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    elevation: 6,
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
+    gap: 8,
   },
+  headerButton: {
+    padding: 8,
+  },
+  
+  loader: { flex: 1, alignItems: "center", justifyContent: "center" },
 
   emptyContainer: {
     flex: 1,

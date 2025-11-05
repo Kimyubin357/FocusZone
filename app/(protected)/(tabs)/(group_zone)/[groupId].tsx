@@ -16,11 +16,12 @@ import { db } from "../../../../firebaseConfig";
 // ---- 타입 ----
 type GroupLocationDetails = {
     id: string;
-    groupName: string; // 👈 locationName -> groupName
+    groupName: string;
     address: string;
     blockedApps?: string[];
     blockedAppsCount?: number;
     memberIds?: string[];
+    isActive?: boolean; // [추가]
 };
 
 // [추가] 멤버 데이터 타입
@@ -67,16 +68,13 @@ export default function GroupZoneDetails() {
                     const data: any = docSnap.data();
                     setDetails({
                         id: docSnap.id,
-                        groupName: data.groupName ?? "그룹장소명", // 👈 groupName으로 수정
+                        groupName: data.groupName ?? "그룹장소명",
                         address: data.address ?? "주소 없음",
-                        // [수정] DB 스키마에 맞게 필드명 변경
                         blockedApps: data.blockedAppCategories ?? [],
-                        // [수정] blockedAppsCount는 blockedAppCategories의 길이를 사용
                         blockedAppsCount: data.blockedAppCategories?.length ?? 0,
-                        memberIds: data.memberIds ?? [], // (이 필드는 현재 사용되지 않음)
+                        memberIds: data.memberIds ?? [],
+                        isActive: data.isActive ?? true, // [추가]
                     });
-                } else {
-                    // TODO: 존재하지 않는 장소 처리
                 }
             } catch (e) {
                 console.error("Failed to load details:", e);
@@ -168,7 +166,31 @@ export default function GroupZoneDetails() {
             >
                 {/* 상단 정보 카드 */}
                 <View style={styles.infoCard}>
-                    <Text style={styles.title}>{details.groupName}</Text>
+                    <View style={styles.rowBetween}>
+                        <Text style={styles.title}>{details.groupName}</Text>
+                        {/* [추가] 활성화 상태 배지 */}
+                        <View
+                            style={[
+                                styles.statusBadge,
+                                {
+                                    backgroundColor: details.isActive
+                                        ? "#DCFCE7"
+                                        : "#FEE2E2",
+                                },
+                            ]}
+                        >
+                            <Text
+                                style={[
+                                    styles.statusBadgeText,
+                                    {
+                                        color: details.isActive ? "#16A34A" : "#DC2626",
+                                    },
+                                ]}
+                            >
+                                {details.isActive ? "활성화" : "비활성화"}
+                            </Text>
+                        </View>
+                    </View>
                     <View style={styles.row}>
                         <Ionicons
                             name="location-outline"
@@ -409,5 +431,20 @@ const styles = StyleSheet.create({
     emptyListText: {
       fontSize: 14,
       color: "#6B7280",
+    },
+    rowBetween: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+    },
+    // [추가] 상태 배지
+    statusBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    statusBadgeText: {
+        fontSize: 12,
+        fontWeight: "700",
     },
 });
