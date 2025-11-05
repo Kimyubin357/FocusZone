@@ -1,5 +1,4 @@
 // app/(protected)/(tabs)/(group_zone)/group_zone.tsx — Minimal theming (preserve all UI/logic)
-
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
@@ -35,7 +34,10 @@ type GroupItem = {
   id: string;
   groupName: string;
   address: string;
-  ownerName: string; // [수정]
+  ownerName: string;
+  userId: string; // 👈 [추가] 소유자(그룹장)의 UID
+  memberIds?: string[];
+  memberAvatars?: string[];
   memberCount: number; // [수정]
   activeDays?: number[]; // [0~6] = 일~토
   inviteCode?: string; // 초대 코드
@@ -57,9 +59,10 @@ const hexToRgba = (hex: string, alpha: number) => {
 
 export default function GroupZone() {
   const router = useRouter();
-  
+
   const [list, setList] = useState<GroupItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [myUid, setMyUid] = useState<string | null>(null); // 👈 [추가] 내 UID 저장
 
   // 메뉴 상태(어느 카드인지 + 버튼 좌표 앵커)
   const [menuForId, setMenuForId] = useState<string | null>(null);
@@ -79,8 +82,10 @@ export default function GroupZone() {
       if (!user) {
         setList([]);
         setLoading(false);
+        setMyUid(null); // 👈 [추가]
         return;
       }
+      setMyUid(user.uid); // 👈 [추가]
       load(user.uid);
     });
     return unsub;
@@ -150,6 +155,7 @@ export default function GroupZone() {
           address: data.address ?? "",
           // [수정] 'creatorId' -> 'ownerId'
           ownerName: ownersMap.get(data.ownerId) ?? "알 수 없음",
+          userId: data.ownerId, // 👈 [추가] (쿼리 조건이 'userId'이므로 항상 존재함)
           // [수정] 'memberCount' 필드 사용
           memberCount: data.memberCount ?? 0,
           activeDays: data.activeDays ?? [],
@@ -165,9 +171,10 @@ export default function GroupZone() {
   };
 
   const goToAdd = () => router.push("/(protected)/(tabs)/(group_zone)/add");
-  
+
   // [추가] 지도 페이지로 이동
-  const goToMap = () => router.push("/(protected)/(tabs)/(group_zone)/group_zone_map");
+  const goToMap = () =>
+    router.push("/(protected)/(tabs)/(group_zone)/group_zone_map");
 
   const onPressCardMenu = (
     id: string,
@@ -184,7 +191,7 @@ export default function GroupZone() {
   const onEdit = () => {
     if (!menuForId) return;
     const group = list.find((item) => item.id === menuForId);
-    
+
     // 권한 체크
     if (group?.myRole !== "owner") {
       Alert.alert("권한 없음", "그룹장만 수정할 수 있습니다.");
@@ -213,11 +220,10 @@ export default function GroupZone() {
     closeMenu();
   };
 
-
   const onDelete = async () => {
     if (!menuForId) return;
     const group = list.find((item) => item.id === menuForId);
-    
+
     // 권한 체크
     if (group?.myRole !== "owner") {
       Alert.alert("권한 없음", "그룹장만 삭제할 수 있습니다.");
@@ -225,29 +231,25 @@ export default function GroupZone() {
       return;
     }
 
-    Alert.alert(
-      "그룹 삭제",
-      "정말로 이 그룹을 삭제하시겠습니까?",
-      [
-        { text: "취소", style: "cancel", onPress: closeMenu },
-        {
-          text: "삭제",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteDoc(doc(db, "groupLocations", menuForId));
-              setList((prev) => prev.filter((x) => x.id !== menuForId));
-              Alert.alert("완료", "그룹이 삭제되었습니다.");
-            } catch (e) {
-              console.log("delete error", e);
-              Alert.alert("오류", "삭제 중 문제가 발생했습니다.");
-            } finally {
-              closeMenu();
-            }
-          },
+    Alert.alert("그룹 삭제", "정말로 이 그룹을 삭제하시겠습니까?", [
+      { text: "취소", style: "cancel", onPress: closeMenu },
+      {
+        text: "삭제",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, "groupLocations", menuForId));
+            setList((prev) => prev.filter((x) => x.id !== menuForId));
+            Alert.alert("완료", "그룹이 삭제되었습니다.");
+          } catch (e) {
+            console.log("delete error", e);
+            Alert.alert("오류", "삭제 중 문제가 발생했습니다.");
+          } finally {
+            closeMenu();
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   // 앵커 기준 좌표 계산(화면 밖 보정)
@@ -263,6 +265,25 @@ export default function GroupZone() {
     return Math.min(Math.max(8, preferred), SCREEN_W - MENU_W - 8);
   })();
 
+  // 👈 [추가] 카드 클릭 핸들러
+  const onPressCard = (item: GroupItem) => {
+    if (!myUid) return;
+
+    const isOwner = item.userId === myUid;
+
+    if (isOwner) {
+      // 그룹장일 경우: 상세 페이지로 이동
+      router.push({
+        pathname: `/(protected)/(tabs)/(group_zone)/${item.id}`,
+      });
+    } else {
+      // 그룹원일 경우: 내 통계 페이지로 이동
+      router.push({
+        pathname: `/(protected)/(tabs)/(group_zone)/stats/${item.id}`,
+      });
+    }
+  };
+
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Ionicons name="location-outline" size={48} color={colors.muted} />
@@ -276,82 +297,84 @@ export default function GroupZone() {
   );
 
   const renderItem = ({ item }: { item: GroupItem }) => (
-    <GroupCard
-      item={item}
-      onPressMenu={(anchor) => onPressCardMenu(item.id, anchor)}
-    />
-  );
-const colors = {
-  background: "#FFFFFF",
-  card: "#F8F8F8",
-  text: "#111111",
-  muted: "#777777",
-  tint: "#0D4093",
-  border: "#E0E0E0",
-};
-const theme = "light";
-
-return (
-  <SafeAreaView
-    style={[styles.safeArea, { backgroundColor: colors.background }]}
-  >
-    {loading ? (
-      <View style={styles.loader}>
-        <ActivityIndicator />
-      </View>
-    ) : (
-      <FlatList
-        data={list}
-        renderItem={renderItem}
-        keyExtractor={(it) => it.id}
-        ListEmptyComponent={renderEmpty}
-        contentContainerStyle={{ padding: 16, flexGrow: 1 }}
-        showsVerticalScrollIndicator={false}
+    <Pressable onPress={() => onPressCard(item)}>
+      <GroupCard
+        item={item}
+        onPressMenu={(anchor) => onPressCardMenu(item.id, anchor)}
       />
-    )}
+    </Pressable>
+  );
+  const colors = {
+    background: "#FFFFFF",
+    card: "#F8F8F8",
+    text: "#111111",
+    muted: "#777777",
+    tint: "#0D4093",
+    border: "#E0E0E0",
+  };
+  const theme = "light";
 
-    {/* [수정] 지도 보기 토글 버튼 - 왼쪽 하단 */}
-    <TouchableOpacity
-      style={[styles.toggleButton, { backgroundColor: colors.tint }]}
-      onPress={goToMap}
-      activeOpacity={0.8}
+  return (
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: colors.background }]}
     >
-      <Ionicons name="map-outline" size={20} color="#fff" />
-      <Text style={styles.toggleButtonText}>지도</Text>
-    </TouchableOpacity>
+      {loading ? (
+        <View style={styles.loader}>
+          <ActivityIndicator />
+        </View>
+      ) : (
+        <FlatList
+          data={list}
+          renderItem={renderItem}
+          keyExtractor={(it) => it.id}
+          ListEmptyComponent={renderEmpty}
+          contentContainerStyle={{ padding: 16, flexGrow: 1 }}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
 
-    {/* + 버튼 */}
-    <TouchableOpacity
-      style={[
-        styles.fab,
-        { backgroundColor: colors.tint, shadowColor: colors.tint },
-      ]}
-      onPress={goToAdd}
-    >
-      <Ionicons name="add" size={32} color="#fff" />
-    </TouchableOpacity>
-
-    {/* 카드별 3점 메뉴 (앵커 위치에 표시) */}
-    <Modal
-      visible={!!menuForId}
-      transparent
-      animationType="fade"
-      onRequestClose={closeMenu}
-    >
-      <Pressable style={styles.menuBackdrop} onPress={closeMenu}>
-        <View />
-      </Pressable>
-      <View
-        style={[
-          styles.menuBox,
-          {
-            position: "absolute",
-            top: menuTop,
-            left: menuLeft,
-            backgroundColor: colors.card,
-          },
-        ]}
+      {/* [수정] 지도 보기 토글 버튼 - 왼쪽 하단 */}
+      <TouchableOpacity
+        style={[styles.toggleButton, { backgroundColor: colors.tint }]}
+        onPress={goToMap}
+        activeOpacity={0.8}
       >
+        <Ionicons name="map-outline" size={20} color="#fff" />
+        <Text style={styles.toggleButtonText}>지도</Text>
+      </TouchableOpacity>
+
+      {/* + 버튼 */}
+      <TouchableOpacity
+        style={[
+          styles.fab,
+          { backgroundColor: colors.tint, shadowColor: colors.tint },
+        ]}
+        onPress={goToAdd}
+      >
+        <Ionicons name="add" size={32} color="#fff" />
+      </TouchableOpacity>
+
+      {/* 카드별 3점 메뉴 (앵커 위치에 표시) */}
+      <Modal
+        visible={!!menuForId}
+        transparent
+        animationType="fade"
+        onRequestClose={closeMenu}
+      >
+        <Pressable style={styles.menuBackdrop} onPress={closeMenu}>
+          <View />
+        </Pressable>
+        <View
+          style={[
+            styles.menuBox,
+            {
+              position: "absolute",
+              top: menuTop,
+              left: menuLeft,
+              backgroundColor: colors.card,
+            },
+          ]}
+        >
           {/* [추가] 그룹장만 수정/삭제 가능 */}
           {list.find((item) => item.id === menuForId)?.myRole === "owner" ? (
             <>
@@ -365,7 +388,7 @@ return (
               />
             </>
           ) : null}
-          
+
           <Pressable style={styles.menuItem} onPress={onShare}>
             <Text style={[styles.menuText, { color: colors.text }]}>
               공유하기
@@ -379,7 +402,10 @@ return (
               />
               <Pressable style={styles.menuItem} onPress={onDelete}>
                 <Text
-                  style={[styles.menuText, { color: "#DC2626", fontWeight: "700" }]}
+                  style={[
+                    styles.menuText,
+                    { color: "#DC2626", fontWeight: "700" },
+                  ]}
                 >
                   삭제하기
                 </Text>
@@ -400,7 +426,6 @@ function GroupCard({
   item: GroupItem;
   onPressMenu: (anchor: { x: number; y: number; w: number; h: number }) => void;
 }) {
-  
   const memberCount = item.memberCount;
   const colors = {
     background: "#FFFFFF",
@@ -429,8 +454,8 @@ function GroupCard({
       ? "rgba(34,197,94,0.22)"
       : "rgba(34,197,94,0.18)"
     : theme === "dark"
-      ? hexToRgba(colors.border, 0.25)
-      : hexToRgba(colors.border, 0.35);
+    ? hexToRgba(colors.border, 0.25)
+    : hexToRgba(colors.border, 0.35);
   const chipText = isActiveToday ? "#16A34A" : colors.muted;
   const chipLabel = isActiveToday ? "오늘 활성" : "오늘 비활성";
 
@@ -510,8 +535,8 @@ function GroupCard({
           const dBg = active
             ? hexToRgba(colors.tint, theme === "dark" ? 0.25 : 0.2)
             : theme === "dark"
-              ? hexToRgba(colors.border, 0.25)
-              : hexToRgba(colors.border, 0.35);
+            ? hexToRgba(colors.border, 0.25)
+            : hexToRgba(colors.border, 0.35);
           const dText = active ? colors.tint : colors.muted;
           return (
             <View

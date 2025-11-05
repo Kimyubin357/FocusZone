@@ -42,7 +42,7 @@ const generateInviteCode = (length = 7) => {
 
 export default function AddGroupPlace() {
   const router = useRouter();
-  
+
   const params = useLocalSearchParams<{
     editMode?: string;
     placeId?: string;
@@ -52,7 +52,7 @@ export default function AddGroupPlace() {
     radius?: string;
     name?: string;
   }>();
- // 기본 색상 (라이트 테마 가정)
+  // 기본 색상 (라이트 테마 가정)
   const colors = {
     background: "#FFFFFF",
     card: "#F8F8F8",
@@ -62,7 +62,7 @@ export default function AddGroupPlace() {
     border: "#E0E0E0",
   };
   const theme = "light"; // 다크모드 미사용 시 고정
-  
+
   const isEditMode = params.editMode === "true";
   const placeId = params.placeId;
 
@@ -260,17 +260,19 @@ export default function AddGroupPlace() {
 
   const goToMap = () => {
     const mapParams: Record<string, any> = {
-      latitude,
-      longitude,
-      radius,
-      address,
+      // 항상 현재 폼 상태(groupName)를 'name' 키로 전달
+      name: groupName,
+      radius: radius.toString(),
     };
+    // 값이 있을 때만 파라미터에 추가 (undefined 방지)
+    if (latitude) mapParams.latitude = latitude.toString();
+    if (longitude) mapParams.longitude = longitude.toString();
+    if (address && address !== "주소를 선택하세요") mapParams.address = address;
+
+    // 수정 모드일 때 ID 등 전달
     if (isEditMode && placeId) {
-      Object.assign(mapParams, {
-        editMode: "true",
-        placeId,
-        name: groupName, // [수정] groupName 상태를 'name'으로 전달
-      });
+      mapParams.editMode = "true";
+      mapParams.placeId = placeId;
     }
     router.replace({
       pathname: "/(protected)/(tabs)/(group_zone)/map",
