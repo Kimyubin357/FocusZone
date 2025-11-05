@@ -1,3 +1,4 @@
+// src/services/location/locationSyncService.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import {

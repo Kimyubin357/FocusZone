@@ -131,8 +131,6 @@ export default function AddGroupPlace() {
 
   // form states
 
-  // form states
-
   const [groupName, setGroupName] = useState(params.name ?? "새로운 그룹장소");
 
   const [address, setAddress] = useState(params.address ?? "주소를 선택하세요");
@@ -163,7 +161,7 @@ export default function AddGroupPlace() {
 
       if (params.activeDays) return JSON.parse(params.activeDays);
 
-    } catch (e) {}
+    } catch (e) { }
 
     return []; // 기본값
 
@@ -175,7 +173,7 @@ export default function AddGroupPlace() {
   const [blockingPolicy, setBlockingPolicy] = useState<BlockingPolicy>(
     params.blockingPolicy ?? "MEMBERS_ONLY"
   );
-const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
+  const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
     () => {
       try {
         // 1. 카테고리 선택기에서 방금 돌아온 값 (최우선)
@@ -186,14 +184,9 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
         if (params.currentCategories) {
           return JSON.parse(params.currentCategories);
         }
-      } catch (e) {}
+      } catch (e) { }
       return []; // 기본값 (DB 로드 전)
     }
-  );
-
-  // [추가] 활성화 상태 관리
-  const [isActive, setIsActive] = useState<boolean>(
-    params.isActive === "true" ? true : true // 기본값: 활성화
   );
 
   // ui states
@@ -226,7 +219,7 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
         setLoadingDoc(false); // ⭐️ 생성 모드일 때 로딩 중지
         return;
       }
-      
+
       // ⭐️ !loadingDoc -> loadingDoc (오타 수정)
       if (loadingDoc) { // ⭐️ 첫 로딩 시에만 실행 (true일 때)
         try {
@@ -248,46 +241,41 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
             params.latitude
               ? Number(params.latitude)
               : typeof data.latitude === "number"
-              ? data.latitude
-              : undefined
+                ? data.latitude
+                : undefined
           );
           setLongitude(
             params.longitude
               ? Number(params.longitude)
               : typeof data.longitude === "number"
-              ? data.longitude
-              : undefined
+                ? data.longitude
+                : undefined
           );
           setRadius(
             params.radius
               ? Number(params.radius)
               : typeof data.radius === "number"
-              ? data.radius
-              : 400
+                ? data.radius
+                : 400
           );
           setactiveDays(
             params.activeDays
               ? JSON.parse(params.activeDays)
               : Array.isArray(data.activeDays)
-              ? data.activeDays
-              : []
+                ? data.activeDays
+                : []
           );
           setBlockingPolicy(
             params.blockingPolicy ?? data.blockingPolicy ?? "MEMBERS_ONLY"
           );
-          
+
           // ⭐️ [수정] params를 우선으로 카테고리 설정
-          const initialCategories = 
+          const initialCategories =
             params.updatedCategories ? JSON.parse(params.updatedCategories) :
-            params.currentCategories ? JSON.parse(params.currentCategories) :
-            Array.isArray(data.blockedAppCategories) ? data.blockedAppCategories : [];
+              params.currentCategories ? JSON.parse(params.currentCategories) :
+                Array.isArray(data.blockedAppCategories) ? data.blockedAppCategories : [];
           setBlockedAppCategories(initialCategories);
 
-          setIsActive(
-            params.isActive !== undefined
-              ? params.isActive === "true"
-              : data.isActive ?? true
-          );
         } catch (e: any) {
           Alert.alert("에러", String(e?.message ?? e));
         } finally {
@@ -307,13 +295,13 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
     useCallback(() => {
       if (isFocused && params.updatedCategories) {
         // 1. useState가 이미 params.updatedCategories로 상태를 설정했음
-        
+
         // 2. 파라미터를 "사용완료" 처리 (중복 실행 방지)
         //    -> updatedCategories를 currentCategories로 "백업"
-        router.setParams({ 
+        router.setParams({
           updatedCategories: undefined,
           currentCategories: params.updatedCategories,
-         });
+        });
       }
     }, [isFocused, params.updatedCategories, router]) // ⭐️ router 추가
   );
@@ -368,8 +356,7 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
           blockingPolicy: blockingPolicy,
 
           blockedAppCategories: blockedAppCategories,
-
-          isActive: isActive, // [추가]
+          isActive: true, //이미 저장해서 등록하면 isActive는 true인데 굳이 수정할 때도 값을 넣어줘야 하나?
         };
 
         // [수정] 컬렉션명 "groupLocations"
@@ -462,7 +449,7 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
 
           blockedAppCategories: blockedAppCategories,
 
-          isActive: isActive, // [추가]
+          isActive: true,
         };
 
         batch.set(newGroupRef, newGroupPayload);
@@ -565,7 +552,6 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
 
       currentCategories: JSON.stringify(blockedAppCategories),
 
-      isActive: isActive.toString(), // [추가]
     };
 
     // 값이 있을 때만 파라미터에 추가 (undefined 방지)
@@ -634,7 +620,6 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
 
         currentCategories: JSON.stringify(blockedAppCategories),
 
-        isActive: isActive.toString(), // [추가]
       },
 
     });
@@ -865,6 +850,7 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
                     blockingPolicy === "MEMBERS_ONLY" &&
 
                     styles.policyTextActive,
+                    { marginRight: 8 },
 
                   ]}
 
@@ -1042,40 +1028,6 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
 
           </View>
 
-          {/* [추가] 활성화/비활성화 토글 */}
-          <View
-            style={[
-              styles.card,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.rowBetween}>
-              <View>
-                <Text style={[styles.label, { color: colors.text, fontSize: 15, marginBottom: 4 }]}>
-                  그룹장소 활성화
-                </Text>
-                <Text style={[styles.label, { color: colors.muted, fontSize: 12 }]}>
-                  비활성화 시 앱 차단이 작동하지 않습니다
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={[
-                  styles.toggleSwitch,
-                  isActive ? styles.toggleSwitchActive : styles.toggleSwitchInactive,
-                ]}
-                onPress={() => setIsActive(!isActive)}
-                activeOpacity={0.8}
-              >
-                <View
-                  style={[
-                    styles.toggleThumb,
-                    isActive ? styles.toggleThumbActive : styles.toggleThumbInactive,
-                  ]}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
         </ScrollView>
 
       )}
@@ -1241,31 +1193,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  
-  // [추가] 토글 스위치 스타일
-  toggleSwitch: {
-    width: 51,
-    height: 31,
-    borderRadius: 15.5,
-    padding: 2,
-    justifyContent: "center",
-  },
-  toggleSwitchActive: {
-    backgroundColor: "#2563EB",
-  },
-  toggleSwitchInactive: {
-    backgroundColor: "#D1D5DB",
-  },
-  toggleThumb: {
-    width: 27,
-    height: 27,
-    borderRadius: 13.5,
-    backgroundColor: "#FFFFFF",
-  },
-  toggleThumbActive: {
-    alignSelf: "flex-end",
-  },
-  toggleThumbInactive: {
-    alignSelf: "flex-start",
-  },
+
 });

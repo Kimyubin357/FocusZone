@@ -1,13 +1,21 @@
 // app/(protected)/(tabs)/(group_zone)/[groupId].tsx
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { collection, doc, getDoc, onSnapshot } from "firebase/firestore";
+import {
+    collection,
+    doc,
+    onSnapshot,
+    serverTimestamp,
+    updateDoc,
+} from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
     ActivityIndicator,
+    Alert,
     ScrollView,
     StyleSheet,
     Text,
+    TouchableOpacity,
     View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -44,6 +52,8 @@ export default function GroupZoneDetails() {
     const [loading, setLoading] = useState(true);
     const [details, setDetails] = useState<GroupLocationDetails | null>(null);
 
+    const [isToggling, setIsToggling] = useState(false);
+
     // [추가] 실시간 멤버 리스트 State
     const [stayingList, setStayingList] = useState<GroupMember[]>([]);
     const [awayList, setAwayList] = useState<GroupMember[]>([]);
@@ -57,13 +67,14 @@ export default function GroupZoneDetails() {
     // Effect 1: 그룹 기본 정보 1회 로드
     useEffect(() => {
         if (!groupId) return;
+        setLoading(true); // 리스너 설정 전에 로딩 시작
 
-        const loadDetails = async () => {
-            try {
-                setLoading(true);
-                const docRef = doc(db, "groupLocations", groupId as string);
-                const docSnap = await getDoc(docRef);
+        const docRef = doc(db, "groupLocations", groupId as string);
 
+        // getDoc -> onSnapshot으로 변경
+        const unsubscribe = onSnapshot(
+            docRef,
+            (docSnap) => {
                 if (docSnap.exists()) {
                     const data: any = docSnap.data();
                     setDetails({
@@ -73,17 +84,25 @@ export default function GroupZoneDetails() {
                         blockedApps: data.blockedAppCategories ?? [],
                         blockedAppsCount: data.blockedAppCategories?.length ?? 0,
                         memberIds: data.memberIds ?? [],
-                        isActive: data.isActive ?? true, // [추가]
+                        isActive: data.isActive ?? true, // 실시간으로 갱신됨
                     });
+                } else {
+                    // 문서가 삭제되었거나 없는 경우
+                    setDetails(null);
                 }
-            } catch (e) {
-                console.error("Failed to load details:", e);
-            } finally {
+                setLoading(false); // 첫 데이터를 받은 후 로딩 완료
+            },
+            (error) => {
+                console.error("Failed to listen to details:", error);
+                Alert.alert("오류", "데이터를 불러오는 데 실패했습니다.");
                 setLoading(false);
             }
-        };
+        );
 
-        loadDetails();
+        // 클린업 함수
+        return () => {
+            unsubscribe();
+        };
     }, [groupId]);
 
     // [추가] Effect 2: 멤버 리스트 실시간 리스너 설정
@@ -128,16 +147,36 @@ export default function GroupZoneDetails() {
         };
     }, [groupId]); // groupId가 변경될 때만 이 Effect 실행
 
-    // 👈 [추가] 멤버 클릭 핸들러
     const onPressMember = (memberId: string) => {
         router.push({
             // 기존 stats 페이지 경로
             pathname: `/(protected)/(tabs)/(group_zone)/stats/${groupId}`,
             // 파라미터로 'memberId'를 넘겨줌
-            params: { memberId: memberId }
+            params: { memberId: memberId },
         });
     };
-    
+
+    const onToggleActive = async () => {
+        if (!details || !groupId || isToggling) return; // 중복 클릭 방지
+
+        setIsToggling(true);
+        const newStatus = !details.isActive; // 현재 상태의 반대값
+        const docRef = doc(db, "groupLocations", groupId as string);
+
+        try {
+            await updateDoc(docRef, {
+                isActive: newStatus,
+                updatedAt: serverTimestamp(), // 수정 시간 갱신
+            });
+            // 성공 시: onSnapshot 리스너가 자동으로 UI를 갱신합니다.
+        } catch (e: any) {
+            console.error("Failed to update isActive:", e);
+            Alert.alert("오류", "상태를 업데이트하는 데 실패했습니다.");
+        } finally {
+            setIsToggling(false);
+        }
+    };
+
     if (loading) {
         return (
             <View style={styles.loader}>
@@ -168,14 +207,12 @@ export default function GroupZoneDetails() {
                 <View style={styles.infoCard}>
                     <View style={styles.rowBetween}>
                         <Text style={styles.title}>{details.groupName}</Text>
-                        {/* [추가] 활성화 상태 배지 */}
+                        {/* [추가] 활성화 상태 배지 (실시간 반영) */}
                         <View
                             style={[
                                 styles.statusBadge,
                                 {
-                                    backgroundColor: details.isActive
-                                        ? "#DCFCE7"
-                                        : "#FEE2E2",
+                                    backgroundColor: details.isActive ? "#DCFCE7" : "#FEE2E2",
                                 },
                             ]}
                         >
@@ -229,8 +266,40 @@ export default function GroupZoneDetails() {
                             </View>
                         ))}
                         <View style={styles.countBadge}>
-                            <Text style={styles.countText}>{details.blockedAppsCount}개</Text>
+                            <Text style={styles.countText}>
+                                {details.blockedAppsCount}개
+                            </Text>
                         </View>
+                    </View>
+
+                    {/* ⭐️ 7. [추가] 활성화 토글 UI */}
+                    <View style={styles.toggleRow}>
+                        <View style={{ flex: 1, paddingRight: 12 }}>
+                            <Text style={styles.toggleLabel}>그룹장소 활성화</Text>
+                            <Text style={styles.toggleDescription}>
+                                비활성화 시 앱 차단이 작동하지 않습니다
+                            </Text>
+                        </View>
+                        <TouchableOpacity
+                            style={[
+                                styles.toggleSwitch,
+                                details.isActive
+                                    ? styles.toggleSwitchActive
+                                    : styles.toggleSwitchInactive,
+                            ]}
+                            onPress={onToggleActive}
+                            disabled={isToggling}
+                            activeOpacity={0.8}
+                        >
+                            <View
+                                style={[
+                                    styles.toggleThumb,
+                                    details.isActive
+                                        ? styles.toggleThumbActive
+                                        : styles.toggleThumbInactive,
+                                ]}
+                            />
+                        </TouchableOpacity>
                     </View>
                 </View>
 
@@ -238,21 +307,30 @@ export default function GroupZoneDetails() {
                 <Text style={styles.listTitle}>체류 중 - {stayingCount}</Text>
                 <View style={styles.memberList}>
                     {stayingList.map((member, index) => (
-                        <View
-                            key={member.id} // 👈 key를 name 대신 member.id로 변경
-                            style={[
-                                styles.memberRow,
-                                index === 0 && { borderTopWidth: 0 },
-                            ]}
+                        // ⭐️ 8. [수정] TouchableOpacity로 감싸서 클릭 가능하게
+                        <TouchableOpacity
+                            key={member.id}
+                            onPress={() => onPressMember(member.id)}
+                            activeOpacity={0.7}
                         >
-                            <View style={[styles.avatar, { backgroundColor: "#2563EB" }]} />
-                            <Text style={styles.memberName}>{member.nickname}</Text>
-                        </View>
+                            <View
+                                style={[
+                                    styles.memberRow,
+                                    index === 0 && { borderTopWidth: 0 },
+                                ]}
+                            >
+                                <View
+                                    style={[styles.avatar, { backgroundColor: "#2563EB" }]}
+                                />
+                                <Text style={styles.memberName}>{member.nickname}</Text>
+                            </View>
+                        </TouchableOpacity>
                     ))}
-                    {/* [추가] 리스트가 비어있을 때 */}
                     {stayingList.length === 0 && (
                         <View style={styles.emptyList}>
-                           <Text style={styles.emptyListText}>체류 중인 멤버가 없습니다.</Text>
+                            <Text style={styles.emptyListText}>
+                                체류 중인 멤버가 없습니다.
+                            </Text>
                         </View>
                     )}
                 </View>
@@ -261,21 +339,30 @@ export default function GroupZoneDetails() {
                 <Text style={styles.listTitle}>부재 중 - {awayList.length}</Text>
                 <View style={styles.memberList}>
                     {awayList.map((member, index) => (
-                        <View
-                            key={member.id} // 👈 key를 name 대신 member.id로 변경
-                            style={[
-                                styles.memberRow,
-                                index === 0 && { borderTopWidth: 0 },
-                            ]}
+                        // ⭐️ 9. [수정] TouchableOpacity로 감싸서 클릭 가능하게
+                        <TouchableOpacity
+                            key={member.id}
+                            onPress={() => onPressMember(member.id)}
+                            activeOpacity={0.7}
                         >
-                            <View style={[styles.avatar, { backgroundColor: "#9CA3AF" }]} />
-                            <Text style={styles.memberName}>{member.nickname}</Text>
-                        </View>
+                            <View
+                                style={[
+                                    styles.memberRow,
+                                    index === 0 && { borderTopWidth: 0 },
+                                ]}
+                            >
+                                <View
+                                    style={[styles.avatar, { backgroundColor: "#9CA3AF" }]}
+                                />
+                                <Text style={styles.memberName}>{member.nickname}</Text>
+                            </View>
+                        </TouchableOpacity>
                     ))}
-                     {/* [추가] 리스트가 비어있을 때 */}
                     {awayList.length === 0 && (
                         <View style={styles.emptyList}>
-                           <Text style={styles.emptyListText}>부재 중인 멤버가 없습니다.</Text>
+                            <Text style={styles.emptyListText}>
+                                부재 중인 멤버가 없습니다.
+                            </Text>
                         </View>
                     )}
                 </View>
@@ -424,13 +511,13 @@ const styles = StyleSheet.create({
     },
     // [추가] 리스트가 비어있을 때 스타일
     emptyList: {
-      paddingVertical: 16,
-      alignItems: "center",
-      justifyContent: "center",
+        paddingVertical: 16,
+        alignItems: "center",
+        justifyContent: "center",
     },
     emptyListText: {
-      fontSize: 14,
-      color: "#6B7280",
+        fontSize: 14,
+        color: "#6B7280",
     },
     rowBetween: {
         flexDirection: "row",
@@ -446,5 +533,49 @@ const styles = StyleSheet.create({
     statusBadgeText: {
         fontSize: 12,
         fontWeight: "700",
+    },
+    toggleRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: "#E5E7EB",
+        paddingTop: 16,
+    },
+    toggleLabel: {
+        fontSize: 15,
+        fontWeight: "600",
+        color: "#111827",
+        marginBottom: 4,
+    },
+    toggleDescription: {
+        fontSize: 12,
+        color: "#6B7280",
+    },
+    toggleSwitch: {
+        width: 51,
+        height: 31,
+        borderRadius: 15.5,
+        padding: 2,
+        justifyContent: "center",
+    },
+    toggleSwitchActive: {
+        backgroundColor: "#2563EB",
+    },
+    toggleSwitchInactive: {
+        backgroundColor: "#D1D5DB",
+    },
+    toggleThumb: {
+        width: 27,
+        height: 27,
+        borderRadius: 13.5,
+        backgroundColor: "#FFFFFF",
+    },
+    toggleThumbActive: {
+        alignSelf: "flex-end",
+    },
+    toggleThumbInactive: {
+        alignSelf: "flex-start",
     },
 });
