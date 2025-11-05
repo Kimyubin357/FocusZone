@@ -8,6 +8,7 @@ import {
     collectionGroup,
     documentId,
     getDocs,
+    onSnapshot, // [추가]
     query,
     where,
 } from "firebase/firestore";
@@ -57,11 +58,15 @@ export default function GroupZoneMap() {
         setLoading(false);
         return;
       }
-      loadGroups(user.uid);
+      const unsubscribeGroups = loadGroups(user.uid);
+      return () => {
+        if (unsubscribeGroups) unsubscribeGroups.then(unsub => unsub?.());
+      };
     });
     return unsub;
   }, []);
 
+  // [수정] onSnapshot으로 실시간 업데이트
   const loadGroups = async (uid: string) => {
     try {
       setLoading(true);
@@ -72,6 +77,7 @@ export default function GroupZoneMap() {
 
       if (memberDocsSnap.empty) {
         setGroups([]);
+        setLoading(false);
         return;
       }
 
@@ -84,47 +90,52 @@ export default function GroupZoneMap() {
         groupsColRef,
         where(documentId(), "in", myGroupIds)
       );
-      const groupsSnap = await getDocs(groupsQuery);
 
-      const ownerIds = [
-        ...new Set(
-          groupsSnap.docs.map((d) => d.data().ownerId as string).filter(Boolean)
-        ),
-      ];
+      // [수정] onSnapshot으로 실시간 구독
+      const unsubscribe = onSnapshot(groupsQuery, async (groupsSnap) => {
+        const ownerIds = [
+          ...new Set(
+            groupsSnap.docs.map((d) => d.data().ownerId as string).filter(Boolean)
+          ),
+        ];
 
-      let ownersMap = new Map<string, string>();
-      if (ownerIds.length > 0) {
-        const usersQuery = query(
-          collection(db, "users"),
-          where(documentId(), "in", ownerIds)
-        );
-        const usersSnap = await getDocs(usersQuery);
-        usersSnap.forEach((doc) => {
-          ownersMap.set(doc.id, doc.data().displayName ?? "그룹장");
+        let ownersMap = new Map<string, string>();
+        if (ownerIds.length > 0) {
+          const usersQuery = query(
+            collection(db, "users"),
+            where(documentId(), "in", ownerIds)
+          );
+          const usersSnap = await getDocs(usersQuery);
+          usersSnap.forEach((doc) => {
+            ownersMap.set(doc.id, doc.data().displayName ?? "그룹장");
+          });
+        }
+
+        const rows: GroupItem[] = groupsSnap.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            groupName: data.groupName ?? "그룹장소명",
+            address: data.address ?? "",
+            ownerName: ownersMap.get(data.ownerId) ?? "알 수 없음",
+            memberCount: data.memberCount ?? 0,
+            activeDays: data.activeDays ?? [],
+            inviteCode: data.inviteCode,
+            latitude: data.latitude,
+            longitude: data.longitude,
+            radius: data.radius ?? 400,
+          };
         });
-      }
 
-      const rows: GroupItem[] = groupsSnap.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          groupName: data.groupName ?? "그룹장소명",
-          address: data.address ?? "",
-          ownerName: ownersMap.get(data.ownerId) ?? "알 수 없음",
-          memberCount: data.memberCount ?? 0,
-          activeDays: data.activeDays ?? [],
-          inviteCode: data.inviteCode,
-          latitude: data.latitude,
-          longitude: data.longitude,
-          radius: data.radius ?? 400,
-        };
+        setGroups(rows);
+        setLoading(false);
       });
 
-      setGroups(rows);
+      // cleanup 함수 반환
+      return unsubscribe;
     } catch (e) {
       console.error("그룹 로드 오류:", e);
       Alert.alert("오류", "그룹 정보를 불러올 수 없습니다.");
-    } finally {
       setLoading(false);
     }
   };

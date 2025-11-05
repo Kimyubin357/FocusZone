@@ -5,11 +5,12 @@ import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   collection,
-  collectionGroup, // 모든 'members' 하위 컬렉션을 검색
+  collectionGroup,
   deleteDoc,
   doc,
   documentId,
   getDocs,
+  onSnapshot, // [추가]
   query,
   where,
 } from "firebase/firestore";
@@ -61,7 +62,7 @@ export default function GroupZone() {
   const router = useRouter();
   const [list, setList] = useState<GroupItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [myUid, setMyUid] = useState<string | null>(null); // 👈 [추가] 내 UID 저장
+  const [myUid, setMyUid] = useState<string | null>(null);
 
   // 메뉴 상태(어느 카드인지 + 버튼 좌표 앵커)
   const [menuForId, setMenuForId] = useState<string | null>(null);
@@ -81,91 +82,92 @@ export default function GroupZone() {
       if (!user) {
         setList([]);
         setLoading(false);
-        setMyUid(null); // 👈 [추가]
+        setMyUid(null);
         return;
       }
-      setMyUid(user.uid); // 👈 [추가]
+      setMyUid(user.uid);
       load(user.uid);
-
     });
     return unsub;
   }, []);
 
-  // [수정] 내가 멤버인 모든 그룹을 불러오는 최적화된 로직
+  // [수정] onSnapshot으로 실시간 업데이트
   const load = async (uid: string) => {
     try {
       setLoading(true);
 
-      // 1. [collectionGroup] 이름이 'members'인 모든 하위 컬렉션에서
       const membersColGroupRef = collectionGroup(db, "members");
-
-      // 2. [필드 쿼리] 내 uid가 'uid' 필드에 저장된 문서를 모두 찾음
-      //    (이 쿼리가 작동하려면 add.tsx에서 'uid' 필드를 추가해야 함)
       const memberQuery = query(membersColGroupRef, where("uid", "==", uid));
       const memberDocsSnap = await getDocs(memberQuery);
 
       if (memberDocsSnap.empty) {
         setList([]);
+        setLoading(false);
         return;
       }
+
       const myRolesMap = new Map<string, string>();
       memberDocsSnap.docs.forEach((doc) => {
-        const data = doc.data();
         const groupId = doc.ref.parent.parent!.id;
         const role = doc.data().role;
         myRolesMap.set(groupId, role);
       });
-      // 3. 내가 속한 그룹들의 ID 목록 추출
+
       const myGroupIds = memberDocsSnap.docs.map(
-        (doc) => doc.ref.parent.parent!.id // .../members/{autoId} -> .../members -> groupLocations/{groupId}
+        (doc) => doc.ref.parent.parent!.id
       );
 
-      // 4. groupLocations 컬렉션에서 해당 ID의 그룹 정보들만 가져옴
       const groupsColRef = collection(db, "groupLocations");
       const groupsQuery = query(
         groupsColRef,
         where(documentId(), "in", myGroupIds)
       );
-      const groupsSnap = await getDocs(groupsQuery);
 
-      // 5. [수정] 'creatorId' -> 'ownerId'
-      const ownerIds = [
-        ...new Set(
-          groupsSnap.docs.map((d) => d.data().ownerId as string).filter(Boolean)
-        ),
-      ];
+      // [수정] onSnapshot으로 실시간 구독
+      const unsubscribe = onSnapshot(groupsQuery, async (groupsSnap) => {
+        const ownerIds = [
+          ...new Set(
+            groupsSnap.docs
+              .map((d) => d.data().ownerId as string)
+              .filter(Boolean)
+          ),
+        ];
 
-      let ownersMap = new Map<string, string>();
-      if (ownerIds.length > 0) {
-        const usersQuery = query(
-          collection(db, "users"),
-          where(documentId(), "in", ownerIds)
-        );
-        const usersSnap = await getDocs(usersQuery);
-        usersSnap.forEach((doc) => {
-          ownersMap.set(doc.id, doc.data().displayName ?? "그룹장");
+        let ownersMap = new Map<string, string>();
+        if (ownerIds.length > 0) {
+          const usersQuery = query(
+            collection(db, "users"),
+            where(documentId(), "in", ownerIds)
+          );
+          const usersSnap = await getDocs(usersQuery);
+          usersSnap.forEach((doc) => {
+            ownersMap.set(doc.id, doc.data().displayName ?? "그룹장");
+          });
+        }
+
+        const rows: GroupItem[] = groupsSnap.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            groupName: data.groupName ?? "그룹장소명",
+            address: data.address ?? "",
+            ownerName: ownersMap.get(data.ownerId) ?? "알 수 없음",
+            userId: data.ownerId,
+            memberCount: data.memberCount ?? 0,
+            activeDays: data.activeDays ?? [],
+            inviteCode: data.inviteCode,
+            ownerId: data.ownerId,
+            myRole: myRolesMap.get(doc.id),
+          };
         });
-      }
-
-      const rows: GroupItem[] = groupsSnap.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          groupName: data.groupName ?? "그룹장소명",
-          address: data.address ?? "",
-          // [수정] 'creatorId' -> 'ownerId'
-          ownerName: ownersMap.get(data.ownerId) ?? "알 수 없음",
-           userId: data.ownerId, // 👈 [추가] (쿼리 조건이 'userId'이므로 항상 존재함)
-          // [수정] 'memberCount' 필드 사용
-          memberCount: data.memberCount ?? 0,
-          activeDays: data.activeDays ?? [],
-          inviteCode: data.inviteCode,
-          ownerId: data.ownerId, // [추가]
-          myRole: myRolesMap.get(doc.id), // [추가]
-        };
+        setList(rows);
+        setLoading(false);
       });
-      setList(rows);
-    } finally {
+
+      // cleanup 함수 반환
+      return unsubscribe;
+    } catch (error) {
+      console.error("그룹 로드 오류:", error);
       setLoading(false);
     }
   };

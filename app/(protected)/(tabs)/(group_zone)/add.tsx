@@ -575,7 +575,7 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
 
     }
 
-    router.replace({
+    router.push({
 
       pathname: "/(protected)/(tabs)/(group_zone)/map",
 
@@ -593,7 +593,7 @@ const [blockedAppCategories, setBlockedAppCategories] = useState<string[]>(
 
     // categoryselect에서 "저장"을 누르면 이 파라미터들이 그대로 다시 돌아옵니다.
 
-    router.replace({
+    router.push({
 
       pathname: "/(protected)/(tabs)/(group_zone)/categoryselect",
 
