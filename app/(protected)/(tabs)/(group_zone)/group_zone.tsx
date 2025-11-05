@@ -192,7 +192,7 @@ export default function GroupZone() {
       return;
     }
 
-    const deepLink = `focuszone://join?code=${group.inviteCode}`;
+    const deepLink = `https://focuszone-568cc.web.app/join?code=${group.inviteCode}`;
     await Clipboard.setStringAsync(deepLink);
     Alert.alert("초대 링크 복사 완료", "친구에게 링크를 공유해보세요!");
     closeMenu();
