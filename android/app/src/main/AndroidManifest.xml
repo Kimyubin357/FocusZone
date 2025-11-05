@@ -56,6 +56,28 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="focuszone"/>
       </intent-filter>
+
+      <!-- 
+        ✅ 3. 새로 추가할 Android App Link 필터 (https://)
+        이 부분이 핵심입니다.
+      -->
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+
+        <!-- App Links는 https 스킴이 필수입니다 -->
+        <data android:scheme="https" />
+        <!-- http도 포함하는 것이 좋습니다 -->
+        <data android:scheme="http" /> 
+        
+        <!-- Firebase 호스팅 기본 도메인 -->
+        <data android:host="focuszone-568cc.web.app" />
+
+        <!-- (선택) /join 경로만 처리할 경우 -->
+        <data android:pathPrefix="/join" /> 
+      </intent-filter>
+      
     </activity>
     <!-- 잠금 화면 액티비티 -->
     <activity

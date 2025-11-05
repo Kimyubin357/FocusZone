@@ -13,7 +13,7 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -89,7 +89,7 @@ export default function JoinGroupPage() {
       const groupId = groupDoc.id;
       const groupData = groupDoc.data();
 
-      if (groupData.ownerId === user.uid) {
+      if (groupData.ownerId === uid) {
         Alert.alert(
           "알림",
           "본인이 생성한 그룹입니다.\n그룹 목록에서 확인하세요."
@@ -183,17 +183,13 @@ export default function JoinGroupPage() {
     } catch (error) {
       console.error("그룹 참여 중 오류:", error);
       setStatus("오류가 발생했습니다.");
-      Alert.alert(
-        "오류",
-        "그룹 참여 중 문제가 발생했습니다. 다시 시도해주세요.",
-        [
-          {
-            text: "확인",
-            onPress: () =>
-              router.replace("/(protected)/(tabs)/(group_zone)/group_zone"),
-          },
-        ]
-      );
+      Alert.alert("오류", "그룹 참여 중 문제가 발생했습니다. 다시 시도해주세요.", [
+        {
+          text: "확인",
+          onPress: () =>
+            router.replace("/(protected)/(tabs)/(group_zone)/group_zone"),
+        },
+      ]);
     }
   };
 
@@ -214,9 +210,7 @@ export default function JoinGroupPage() {
             <Text style={styles.title}>
               '{groupToJoin.data().groupName}' 그룹
             </Text>
-            <Text style={styles.label}>
-              그룹에서 사용할 닉네임을 입력하세요
-            </Text>
+            <Text style={styles.label}>그룹에서 사용할 닉네임을 입력하세요</Text>
             <TextInput
               style={styles.input}
               value={nickname}
@@ -224,7 +218,10 @@ export default function JoinGroupPage() {
               placeholder="닉네임"
               autoFocus
             />
-            <TouchableOpacity style={styles.button} onPress={handleConfirmJoin}>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={handleConfirmJoin}
+            >
               <Text style={styles.buttonText}>참여하기</Text>
             </TouchableOpacity>
           </View>

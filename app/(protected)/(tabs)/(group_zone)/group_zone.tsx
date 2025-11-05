@@ -24,7 +24,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { auth, db } from "../../../../firebaseConfig";
@@ -59,7 +59,6 @@ const hexToRgba = (hex: string, alpha: number) => {
 
 export default function GroupZone() {
   const router = useRouter();
-
   const [list, setList] = useState<GroupItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [myUid, setMyUid] = useState<string | null>(null); // 👈 [추가] 내 UID 저장
@@ -87,6 +86,7 @@ export default function GroupZone() {
       }
       setMyUid(user.uid); // 👈 [추가]
       load(user.uid);
+
     });
     return unsub;
   }, []);
@@ -155,7 +155,7 @@ export default function GroupZone() {
           address: data.address ?? "",
           // [수정] 'creatorId' -> 'ownerId'
           ownerName: ownersMap.get(data.ownerId) ?? "알 수 없음",
-          userId: data.ownerId, // 👈 [추가] (쿼리 조건이 'userId'이므로 항상 존재함)
+           userId: data.ownerId, // 👈 [추가] (쿼리 조건이 'userId'이므로 항상 존재함)
           // [수정] 'memberCount' 필드 사용
           memberCount: data.memberCount ?? 0,
           activeDays: data.activeDays ?? [],
@@ -214,7 +214,7 @@ export default function GroupZone() {
       return;
     }
 
-    const deepLink = `focuszone://join?code=${group.inviteCode}`;
+    const deepLink = `https://focuszone-568cc.web.app/join?code=${group.inviteCode}`;
     await Clipboard.setStringAsync(deepLink);
     Alert.alert("초대 링크 복사 완료", "친구에게 링크를 공유해보세요!");
     closeMenu();
