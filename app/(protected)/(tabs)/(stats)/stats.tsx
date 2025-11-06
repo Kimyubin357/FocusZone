@@ -1029,7 +1029,7 @@ function LiveNowBadge({
 
 /* ───────── Styles ───────── */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "white" },
+  container: { flex: 1, backgroundColor: "white", marginTop: 15 },
   scrollContent: { padding: 16, paddingBottom: 40 },
   header: { marginBottom: 8 },
   center: {
