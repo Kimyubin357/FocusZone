@@ -931,7 +931,7 @@ export default function Stats() {
 
         {(stats.loading as boolean) ? (
           <View style={styles.center}>
-            <Text style={{ color: "#6B7280" }}>집중장소를 선택하세요.</Text>
+            <Text style={{ color: "#6B7280" }}>로딩중</Text>
           </View>
         ) : (
           <View style={styles.body}>
