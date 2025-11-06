@@ -12,7 +12,7 @@ import type { Granularity } from "../../../../src/features/stats/types";
 import { useStats } from "../../../../src/features/stats/useStats";
 import DatePager from "../../../../src/features/ui/DatePager";
 import PeriodToggle from "../../../../src/features/ui/PeriodToggle";
-import { fmtHm } from "../../../../src/services/lib/time";
+import { fmtHm, toYMD } from "../../../../src/services/lib/time";
 
 /** HH:mm:ss */
 function fmtHms(ms: number) {
@@ -95,6 +95,82 @@ function useLiveTodayMs(
   return liveMs;
 }
 
+/**
+ * [STATS][ADDED] 오늘(일 단위) '완료된 세션' 총합(ms)을 1초마다 재계산
+ * - AsyncStorage 키 패턴: stats:${userId}:${placeId}:${YYYY-MM-DD}
+ * - placeId 범위는 "__all__" 가정(전체 합산). 특정 place만 원하면 filter 조건 추가.
+ */
+function useFinishedTodayMs(
+  userId: string,
+  anchor: Date,
+  granularity: Granularity
+) {
+  const [ms, setMs] = useState(0);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      let mounted = true;
+      let timer: any;
+
+      const load = async () => {
+        // day & 오늘일 때만 동작 (과거/미래 날짜엔 폴링 불필요)
+        if (!(granularity === "day" && sameYmd(anchor, new Date()))) {
+          if (mounted) setMs(0);
+          return;
+        }
+
+        try {
+          const ymd = toYMD(anchor);
+          const allKeys = await AsyncStorage.getAllKeys();
+          const prefix = `stats:${userId}:`;
+          const targetKeys = allKeys.filter(
+            (k) => k.startsWith(prefix) && k.endsWith(`:${ymd}`)
+          );
+
+          if (targetKeys.length === 0) {
+            if (mounted) setMs(0);
+            return;
+          }
+
+          const pairs = await AsyncStorage.multiGet(targetKeys);
+          let sum = 0;
+          for (const [, raw] of pairs) {
+            if (!raw) continue;
+            try {
+              const rows: {
+                startedAt: number;
+                endedAt: number;
+                durationMs?: number;
+              }[] = JSON.parse(raw);
+              for (const r of rows) {
+                sum +=
+                  r.durationMs ??
+                  Math.max(0, (r.endedAt ?? 0) - (r.startedAt ?? 0));
+              }
+            } catch {
+              // 무시
+            }
+          }
+          if (mounted) setMs(sum);
+        } catch {
+          if (mounted) setMs(0);
+        }
+      };
+
+      // 즉시 1회 + 1초 폴링
+      load();
+      timer = setInterval(load, 1000);
+
+      return () => {
+        mounted = false;
+        if (timer) clearInterval(timer);
+      };
+    }, [userId, anchor, granularity])
+  );
+
+  return ms;
+}
+
 export default function Stats() {
   const userId = "local";
 
@@ -111,14 +187,16 @@ export default function Stats() {
   });
 
   // [STATS][ADDED] 오늘-일 화면일 때 진행 중 세션의 실시간 ms
+  // const liveTodayMs = useLiveTodayMs(userId, anchor, granularity);
   const liveTodayMs = useLiveTodayMs(userId, anchor, granularity);
-
+  const finishedTodayMs = useFinishedTodayMs(userId, anchor, granularity);
   // [STATS][MODIFIED] 표시 총합 = 기존 totalMs + (오늘·일 화면인 경우) liveTodayMs
+  // [STATS][MODIFIED] useStats가 이미 일 화면에서 '진행 중'을 포함 → 화면에서는 그대로 표시
   const baseTotalMs = stats?.totalMs ?? 0;
   const displayTotalMs =
     granularity === "day" && sameYmd(anchor, new Date())
-      ? baseTotalMs + (liveTodayMs || 0)
-      : baseTotalMs;
+      ? (finishedTodayMs || 0) + (liveTodayMs || 0)
+      : stats?.totalMs ?? 0;
 
   const title = useMemo(
     () =>
