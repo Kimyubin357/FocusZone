@@ -12,7 +12,7 @@ import type { Granularity } from "../../../../src/features/stats/types";
 import { useStats } from "../../../../src/features/stats/useStats";
 import DatePager from "../../../../src/features/ui/DatePager";
 import PeriodToggle from "../../../../src/features/ui/PeriodToggle";
-import { fmtHm, toYMD } from "../../../../src/services/lib/time";
+import { toYMD } from "../../../../src/services/lib/time";
 
 /* ───────── 공통 유틸 ───────── */
 function fmtHms(ms: number) {
@@ -687,8 +687,7 @@ export default function Stats() {
         : "월간 총 집중",
     [granularity]
   );
-  const formattedTotal =
-    granularity === "day" ? fmtHms(displayTotalMs) : fmtHm(displayTotalMs);
+  const formattedTotal = fmtHms(displayTotalMs);
 
   const weekLabel =
     granularity === "week" ? weekOfMonthLabel(anchor) : undefined;
@@ -727,14 +726,11 @@ export default function Stats() {
 
         {stats.loading ? (
           <View style={styles.center}>
-            <Text style={{ color: "#6B7280" }}>집중장소를 선택하세요.</Text>
+            <Text style={{ color: "#6B7280" }}>로딩 중</Text>
           </View>
         ) : (
           <View style={styles.body}>
             <View style={styles.summary}>
-              {granularity === "week" && (
-                <Text style={styles.weekMeta}>{weekLabel}</Text>
-              )}
               <Text style={styles.summaryTitle}>{title}</Text>
               <Text style={styles.summaryValue}>{formattedTotal}</Text>
             </View>
