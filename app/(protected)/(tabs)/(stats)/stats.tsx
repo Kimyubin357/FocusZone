@@ -1,7 +1,7 @@
-// [STATS] FINAL
-// - Day: 실시간 총합(HH:mm:ss), 시간별 세로 막대, '진입&이탈 시간' 카드(해당 날짜), '오늘로 가기' 버튼
-// - Week: 실시간 총합(HH:mm), 'YYYY.MM N째주' 라벨, 요일 세로 막대, '이번 주로' 버튼, 진입&이탈 섹션 숨김
-// - Month: 총합(HH:mm), '이번 달로' 버튼, 진입&이탈 섹션 숨김
+// [STATS] FINAL with Month Heatmap
+// - Day: 실시간 총합(HH:mm:ss), 시간별 세로 막대, '진입&이탈' 카드(해당 날짜)
+// - Week: 실시간 총합(HH:mm:ss), 'YYYY.MM N째주' 라벨, 요일 세로 막대(24h=100%)
+// - Month: 실시간 총합(HH:mm:ss), '달력형 히트맵'(0~24h, 1h step, 0h=회색, 24h=진한 초록)
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
@@ -30,6 +30,9 @@ function sameYmd(a: Date, b: Date) {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
   );
+}
+function sameYm(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
 }
 function startOfDay(d: Date | number) {
   const x = new Date(d);
@@ -321,6 +324,55 @@ function useLiveWeekMs(userId: string, anchor: Date, granularity: Granularity) {
   return ms;
 }
 
+// [MONTH][ADD] 이번 달 화면일 때 진행중 세션 실시간 합(ms)
+function useLiveMonthMs(
+  userId: string,
+  anchor: Date,
+  granularity: Granularity
+) {
+  const [ms, setMs] = useState(0);
+  const isThisMonth = granularity === "month" && sameYm(anchor, new Date());
+
+  useFocusEffect(
+    React.useCallback(() => {
+      let mounted = true;
+
+      const tick = async () => {
+        if (!isThisMonth) {
+          if (mounted) setMs(0);
+          return;
+        }
+        try {
+          const raw = await AsyncStorage.getItem(`currentSessions:${userId}`);
+          const sessions: { placeId: string; startedAt: number }[] = raw
+            ? JSON.parse(raw)
+            : [];
+          const nowTs = Date.now();
+          const mStart = startOfMonth(new Date()).getTime();
+          const mEnd = endOfMonth(new Date()).getTime();
+          const sum = sessions.reduce((acc, s) => {
+            const from = Math.max(s.startedAt ?? nowTs, mStart);
+            const to = Math.min(nowTs, mEnd);
+            return acc + Math.max(0, to - from);
+          }, 0);
+          if (mounted) setMs(sum);
+        } catch {
+          if (mounted) setMs(0);
+        }
+      };
+
+      tick();
+      const t = setInterval(tick, 1000);
+      return () => {
+        mounted = false;
+        clearInterval(t);
+      };
+    }, [userId, anchor, granularity, isThisMonth])
+  );
+
+  return ms;
+}
+
 /* ───────── Day 그래프(시간별) ───────── */
 function DayHourBars({ minutesByHour }: { minutesByHour: number[] }) {
   return (
@@ -361,11 +413,10 @@ function DayHourBars({ minutesByHour }: { minutesByHour: number[] }) {
   );
 }
 
-/* ───────── Week 그래프(요일) ───────── */
+/* ───────── Week 그래프(요일, 24h=100%) ───────── */
 function WeekBarsKR({ msByDay }: { msByDay: number[] }) {
   const labels = ["일", "월", "화", "수", "목", "금", "토"];
   const DAY_MS = 24 * 60 * 60 * 1000;
-
   return (
     <View style={{ marginTop: 16 }}>
       <View
@@ -373,14 +424,12 @@ function WeekBarsKR({ msByDay }: { msByDay: number[] }) {
           flexDirection: "row",
           alignItems: "flex-end",
           justifyContent: "space-between",
-          height: 160, // 그래프 총 높이(디자인만)
+          height: 160,
         }}
       >
         {msByDay.map((v, i) => {
-          // 혹시 저장/계산상의 이유로 24시간을 초과해도 100%로 캡
           const clamped = Math.min(DAY_MS, Math.max(0, v || 0));
           const pct = (clamped / DAY_MS) * 100;
-
           return (
             <View
               key={`w-${i}`}
@@ -390,7 +439,7 @@ function WeekBarsKR({ msByDay }: { msByDay: number[] }) {
                 style={{
                   width: 16,
                   height: `${pct}%`,
-                  backgroundColor: "#10B981", // 초록
+                  backgroundColor: "#10B981",
                   borderRadius: 4,
                 }}
               />
@@ -470,7 +519,7 @@ function useDaySessionsLive(
         }
       };
       load();
-      const t = setInterval(load, 1000); // [DAY][ADDED] 새 항목 생기면 라이브 반영
+      const t = setInterval(load, 1000);
       return () => {
         mounted = false;
         clearInterval(t);
@@ -513,7 +562,7 @@ function PaginatedStayList({
     return [...(rows || [])].sort((a, b) => {
       const da = (a.endedAt ?? a.startedAt) || 0;
       const db = (b.endedAt ?? b.startedAt) || 0;
-      return db - da; // 최신순
+      return db - da;
     });
   }, [rows]);
   const total = sorted.length;
@@ -524,7 +573,6 @@ function PaginatedStayList({
     return sorted.slice(start, start + pageSize);
   }, [page, pageSize, sorted]);
   const goPage = (p: number) => setPage(Math.min(totalPages, Math.max(1, p)));
-
   if (!rows || rows.length === 0) {
     return (
       <Text style={{ color: "#9CA3AF", marginTop: 6 }}>기록이 없습니다.</Text>
@@ -588,36 +636,186 @@ function PaginatedStayList({
   );
 }
 
+/* ───────── [MONTH][ADDED] 달력 히트맵 ───────── */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// 0~24시간(정수) → 색상 팔레트(0=회색, 24=진한 초록)
+const HOUR_COLORS = [
+  "#E5E7EB", // 0h - gray-200
+  "#D1FAE5", // 1h - emerald-100
+  "#BFEFDB", // 2h
+  "#ACE6D1", // 3h
+  "#99DCC7", // 4h
+  "#87D2BD", // 5h
+  "#74C8B3", // 6h
+  "#62BEA9", // 7h
+  "#4FB49F", // 8h
+  "#3DAA95", // 9h
+  "#2AA08B", // 10h
+  "#189681", // 11h
+  "#078C77", // 12h (중간)
+  "#067F6C", // 13h
+  "#067461", // 14h
+  "#066956", // 15h
+  "#065F4C", // 16h
+  "#055542", // 17h
+  "#054B38", // 18h
+  "#04422F", // 19h
+  "#043A27", // 20h
+  "#04321F", // 21h
+  "#032A19", // 22h
+  "#032313", // 23h
+  "#022D1B", // 24h - 가장 진한 초록
+];
+
+// [MONTH][FIXED] 1분이라도 있으면 1단계 색상 이상 적용
+function clampHourColor(hours: number) {
+  // 0시간 이상, 24시간 이하로 제한
+  const capped = Math.max(0, Math.min(24, hours));
+  // 1분이라도 했으면 최소 1단계로 올림
+  const idx = capped === 0 ? 0 : Math.min(24, Math.max(1, Math.ceil(capped))); // ✅ 핵심 변경
+  return HOUR_COLORS[idx];
+}
+
+function MonthCalendar({
+  anchor,
+  monthGrid,
+  liveTodayMsForMonth,
+}: {
+  anchor: Date;
+  monthGrid: { date: string; totalMs: number }[];
+  liveTodayMsForMonth: number;
+}) {
+  // anchor 달의 1일 ~ 말일
+  const year = anchor.getFullYear();
+  const month = anchor.getMonth();
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0); // 말일
+  const firstDayIdx = first.getDay(); // 0=일
+  const totalDays = last.getDate();
+  const todayYmd = toYMD(new Date());
+
+  // date → totalMs (오늘이면 liveTodayMs 더해 반영)
+  const map = new Map<string, number>();
+  for (const d of monthGrid || []) {
+    map.set(d.date, d.totalMs || 0);
+  }
+  if (sameYm(anchor, new Date())) {
+    // 현재 달이면 오늘 칸에 라이브 합산
+    const prev = map.get(todayYmd) || 0;
+    map.set(todayYmd, prev + (liveTodayMsForMonth || 0));
+  }
+
+  // 그리드 생성(일~토 7열, 필요 레코드 수 만큼)
+  const cells: { ymd?: string; num?: number; ms?: number }[] = [];
+  // 앞쪽 공백
+  for (let i = 0; i < firstDayIdx; i++) cells.push({});
+  for (let d = 1; d <= totalDays; d++) {
+    const ymd = `${year}-${String(month + 1).padStart(2, "0")}-${String(
+      d
+    ).padStart(2, "0")}`;
+    const ms = map.get(ymd) || 0;
+    cells.push({ ymd, num: d, ms });
+  }
+  // 7의 배수로 채우기(뒤쪽 공백)
+  while (cells.length % 7 !== 0) cells.push({});
+
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+
+  return (
+    <View style={{ marginTop: 12 }}>
+      {/* 요일 헤더 */}
+      <View style={monthStyles.weekHeader}>
+        {["일", "월", "화", "수", "목", "금", "토"].map((w) => (
+          <Text key={w} style={monthStyles.weekHeadTxt}>
+            {w}
+          </Text>
+        ))}
+      </View>
+
+      {/* 주차 그리드 */}
+      {weeks.map((w, wi) => (
+        <View key={`w-${wi}`} style={monthStyles.row}>
+          {w.map((c, ci) => {
+            const isBlank = !c.ymd;
+            const hours = (c.ms || 0) / 3600000;
+            const color = isBlank ? "transparent" : clampHourColor(hours);
+            const isToday = c.ymd === todayYmd;
+            return (
+              <View key={`c-${wi}-${ci}`} style={monthStyles.cell}>
+                <View
+                  style={[
+                    monthStyles.box,
+                    {
+                      backgroundColor: color,
+                      borderColor: isToday ? "#111827" : "#E5E7EB",
+                      borderWidth: isToday ? 2 : StyleSheet.hairlineWidth,
+                    },
+                  ]}
+                >
+                  {/* 날짜 숫자 */}
+                  {!isBlank && (
+                    <Text
+                      style={[
+                        monthStyles.dayNum,
+                        { color: hours > 0 ? "#0B3B2E" : "#6B7280" },
+                      ]}
+                    >
+                      {c.num}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ))}
+
+      {/* 범례
+      <View style={monthStyles.legendRow}>
+        <Text style={monthStyles.legendLabel}>0h</Text>
+        <View style={monthStyles.legendScale}>
+          {Array.from({ length: 25 }).map((_, i) => (
+            <View
+              key={`lg-${i}`}
+              style={{ flex: 1, height: 10, backgroundColor: HOUR_COLORS[i] }}
+            />
+          ))}
+        </View>
+        <Text style={monthStyles.legendLabel}>24h</Text>
+      </View> */}
+    </View>
+  );
+}
+
+// [MONTH][ADD] 월 시작/끝 유틸
+function startOfMonth(d: Date) {
+  const x = new Date(d.getFullYear(), d.getMonth(), 1);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+function endOfMonth(d: Date) {
+  const x = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
 /* ───────── 주차 라벨 ───────── */
 const ORD = ["첫째주", "둘째주", "셋째주", "넷째주", "다섯째주"];
-// function weekOfMonthLabel(date: Date) {
-//   const year = date.getFullYear();
-//   const month = date.getMonth(); // 0-11
-//   const d1 = new Date(year, month, 1);
-//   const firstSun = startOfWeekSun(d1); // 1일이 포함된 주의 일요일
-//   const thisSun = startOfWeekSun(date);
-//   const diff = Math.round((thisSun.getTime() - firstSun.getTime()) / 86400000);
-//   const idx = Math.floor(diff / 7); // 0-based
-//   return `${year}.${String(month + 1).padStart(2, "0")} ${
-//     ORD[Math.min(4, Math.max(0, idx))]
-//   }`;
-// }
 function weekOfMonthLabel(date: Date) {
   const year = date.getFullYear();
-  const month = date.getMonth(); // 0~11
-  const firstOfMonth = new Date(year, month, 1);
-  const firstWeekStart = new Date(firstOfMonth);
-  firstWeekStart.setDate(firstOfMonth.getDate() - firstOfMonth.getDay()); // 해당 달의 첫 일요일
-  const thisWeekStart = new Date(date);
-  thisWeekStart.setDate(date.getDate() - date.getDay());
-  const diffDays = Math.floor(
-    (thisWeekStart.getTime() - firstWeekStart.getTime()) / (1000 * 60 * 60 * 24)
-  );
-  const weekIdx = Math.floor(diffDays / 7); // 0-based
+  const month = date.getMonth(); // 0-11
+  const d1 = new Date(year, month, 1);
+  const firstSun = startOfWeekSun(d1);
+  const thisSun = startOfWeekSun(date);
+  const diff = Math.round((thisSun.getTime() - firstSun.getTime()) / 86400000);
+  const idx = Math.floor(diff / 7); // 0-based
   return `${year}.${String(month + 1).padStart(2, "0")} ${
-    ORD[Math.min(ORD.length - 1, weekIdx)]
+    ORD[Math.min(4, Math.max(0, idx))]
   }`;
 }
+
 /* ───────── 메인 컴포넌트 ───────── */
 export default function Stats() {
   const userId = "local";
@@ -656,6 +854,9 @@ export default function Stats() {
         )
       : new Array(24).fill(0);
 
+  // [MONTH][ADD] Month
+  const liveMonthMs = useLiveMonthMs(userId, anchor, granularity);
+
   // Week
   const liveWeekMs = useLiveWeekMs(userId, anchor, granularity);
   let weekBars: number[] | undefined = (stats as any).weekBars;
@@ -668,14 +869,18 @@ export default function Stats() {
     }
   }
 
-  // 표시 총합
+  // [COMMON][MODIFIED] 표시 총합: 일/주/월 각각 라이브 더해주기
   const baseTotal = stats?.totalMs ?? 0;
   const displayTotalMs =
     granularity === "day" && sameYmd(anchor, new Date())
       ? (finishedTodayMs || 0) + (liveTodayMs || 0)
       : granularity === "week"
       ? baseTotal + (liveWeekMs || 0)
+      : granularity === "month"
+      ? baseTotal + (liveMonthMs || 0) // ✅ 월간 라이브 반영
       : baseTotal;
+
+  const formattedTotal = fmtHms(displayTotalMs); // HH:mm:ss
 
   // 헤더 타이틀
   const title = useMemo(
@@ -684,26 +889,28 @@ export default function Stats() {
         ? "총 집중 시간"
         : granularity === "week"
         ? "주간 총 집중 시간"
-        : "월간 총 집중",
+        : "월간 총 집중 시간",
     [granularity]
   );
-  const formattedTotal = fmtHms(displayTotalMs);
 
+  // 주차 라벨
   const weekLabel =
     granularity === "week" ? weekOfMonthLabel(anchor) : undefined;
 
-  // [NAV][ADDED] 날짜 점프 버튼 라벨/동작
+  // [NAV] 오늘/이번주/이번달 점프 버튼
   const jumpLabel =
     granularity === "day"
-      ? "오늘로"
+      ? "오늘로 가기"
       : granularity === "week"
       ? "이번 주로"
       : "이번 달로";
   const onJump = () => setAnchor(new Date());
 
-  // Day: 진입/이탈 기록(해당 날짜만)
-  const dayRowsLive = useDaySessionsLive(userId, anchor, granularity);
-
+  // [MONTH][ADDED] monthGrid + 오늘 라이브 반영
+  const monthGridRaw: { date: string; totalMs: number }[] =
+    (stats as any).monthGrid || [];
+  const liveTodayMsForMonth = sameYm(anchor, new Date()) ? liveTodayMs : 0; // 현재 달이면 오늘칸 실시간 가산
+  const dayRows = useDaySessionsLive(userId, anchor, granularity);
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -716,37 +923,50 @@ export default function Stats() {
             onChange={setAnchor}
             onToday={() => setAnchor(new Date())}
           />
-          {/* [NAV][ADDED] 오늘/이번주/이번달 버튼 가운데 정렬하기 */}
           <Pressable style={styles.jumpBtn} onPress={onJump}>
             <Text style={styles.jumpBtnText}>{jumpLabel}</Text>
           </Pressable>
-
           <LiveNowBadge userId={userId} placeId={placeId} />
         </View>
 
-        {stats.loading ? (
+        {(stats.loading as boolean) ? (
           <View style={styles.center}>
-            <Text style={{ color: "#6B7280" }}>로딩 중</Text>
+            <Text style={{ color: "#6B7280" }}>집중장소를 선택하세요.</Text>
           </View>
         ) : (
           <View style={styles.body}>
             <View style={styles.summary}>
+              {granularity === "week" && (
+                <Text style={styles.weekMeta}>{weekLabel}</Text>
+              )}
               <Text style={styles.summaryTitle}>{title}</Text>
               <Text style={styles.summaryValue}>{formattedTotal}</Text>
             </View>
 
+            {/* Day 그래프 */}
             {granularity === "day" && (
               <DayHourBars minutesByHour={minutesByHour} />
             )}
+
+            {/* Week 그래프 */}
             {granularity === "week" && weekBars && (
               <WeekBarsKR msByDay={weekBars} />
             )}
 
-            {/* [DAY][KEEP] 일 화면에서만 '진입 & 이탈 시간' 표기 */}
+            {/* [MONTH][ADDED] 월 달력 히트맵 */}
+            {granularity === "month" && (
+              <MonthCalendar
+                anchor={anchor}
+                monthGrid={monthGridRaw}
+                liveTodayMsForMonth={liveTodayMsForMonth}
+              />
+            )}
+
+            {/* Day에서만 '진입 & 이탈 시간' */}
             {granularity === "day" && (
               <View style={{ marginTop: 12 }}>
                 <Text style={styles.sectionTitle}>진입 & 이탈 시간</Text>
-                <PaginatedStayList rows={dayRowsLive} />
+                <PaginatedStayList rows={dayRows} />
               </View>
             )}
           </View>
@@ -896,7 +1116,7 @@ const stayStyles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     marginRight: 8,
-    backgroundColor: "#10B981", // 초록 고정
+    backgroundColor: "#10B981",
   },
   mainTime: {
     fontSize: 16,
@@ -966,5 +1186,54 @@ const pagerStyles = StyleSheet.create({
   navLabel: {
     fontSize: 12,
     color: "#374151",
+  },
+});
+
+const monthStyles = StyleSheet.create({
+  weekHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 2,
+    marginBottom: 6,
+  },
+  weekHeadTxt: {
+    width: `${100 / 7}%`,
+    textAlign: "center",
+    fontSize: 12,
+    color: "#6B7280",
+  },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  cell: {
+    width: `${100 / 7}%`,
+    paddingHorizontal: 2,
+  },
+  box: {
+    aspectRatio: 1, // 정사각형
+    borderRadius: 10,
+    alignItems: "flex-start",
+    justifyContent: "flex-start",
+    padding: 6,
+    backgroundColor: "#E5E7EB",
+  },
+  dayNum: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  legendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  legendLabel: { fontSize: 10, color: "#6B7280", marginHorizontal: 6 },
+  legendScale: {
+    flex: 1,
+    flexDirection: "row",
+    height: 10,
+    borderRadius: 6,
+    overflow: "hidden",
   },
 });
