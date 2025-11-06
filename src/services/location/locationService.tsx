@@ -192,8 +192,6 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             groupPlaces = parsedGroupPlaces
               .filter(p => p && p.id);
           }
-          // ✅ [디버그 추가]
-          console.log('[Location Debug] groupPlaces 불러옴:', groupPlaces);
         } catch (parseError) {
           console.error("Failed to parse GROUP_PLACES_KEY:", parseError);
           // (파싱 실패 시 안전하게 빈 배열 유지)
@@ -241,9 +239,6 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           currentLocation.coords.longitude,
           place.latitude,
           place.longitude
-        );
-        console.log(
-          `[Location Debug] Checking ${place.name}: distance=${distance.toFixed(1)}m / radius=${place.radius}`
         );
 
         if (distance <= place.radius) {

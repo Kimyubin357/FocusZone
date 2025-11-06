@@ -151,8 +151,7 @@ const setupFirestoreListener = (user: User) => {
                     installedApps
                 );
                 console.log('[Sync Debug] 4. 카테고리 번역 완료.');
-                
-                console.log('[Sync Debug] 5. AsyncStorage 저장 직전 데이터:', JSON.stringify(translatedPlaces, null, 2));
+
                 // 4. "번역된" 최종 목록을 AsyncStorage에 저장
                 await AsyncStorage.setItem(
                     GROUP_PLACES_STORAGE_KEY,
