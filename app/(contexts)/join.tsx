@@ -1,6 +1,6 @@
-// app/(contexts)/join.tsx
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
+  arrayUnion,
   collection,
   doc,
   DocumentData, // [추가] 타입 임포트
@@ -86,7 +86,7 @@ export default function JoinGroupPage() {
       }
 
       const groupDoc = snapshot.docs[0];
-      const groupId = groupDoc.id; 
+      const groupId = groupDoc.id;
       const groupData = groupDoc.data();
 
       if (groupData.ownerId === uid) {
@@ -99,7 +99,7 @@ export default function JoinGroupPage() {
         return;
       }
 
-      // 3. 이미 멤버인지 확인
+      // 3. 이미 멤버인지 확인 (수정된 로직: .../members/{uid})
       const memberRef = doc(db, "groupLocations", groupId, "members", uid);
       const memberSnap = await getDoc(memberRef);
       if (memberSnap.exists()) {
@@ -153,6 +153,7 @@ export default function JoinGroupPage() {
 
     try {
       const groupId = groupToJoin.id;
+      // members 서브 컬렉션의 문서 ID로 user.uid 사용 (add.tsx와 동일)
       const memberRef = doc(db, "groupLocations", groupId, "members", user.uid);
 
       const batch = writeBatch(db);
@@ -166,9 +167,10 @@ export default function JoinGroupPage() {
         status: "inactive", // [추가] 초기 상태
       });
 
-      // groupLocations 문서의 memberCount 1 증가
+      // [수정] 2. groupLocations 문서 업데이트 (memberCount + memberIds)
       batch.update(groupToJoin.ref, {
         memberCount: increment(1),
+        memberIds: arrayUnion(user.uid), // 👈 [핵심] memberIds 배열에 uid 추가
       });
 
       await batch.commit();

@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -150,7 +150,7 @@ export default function AddFocusPlace() {
     }
 
     try {
-      const savedPlaces = await AsyncStorage.getItem("focusPlaces");
+      const savedPlaces = await AsyncStorage.getItem("personalFocusPlaces");
       let places = savedPlaces ? JSON.parse(savedPlaces) : [];
 
       if (isEditMode && placeId) {
@@ -183,7 +183,7 @@ export default function AddFocusPlace() {
         };
         places.push(newPlace);
       }
-      await AsyncStorage.setItem("focusPlaces", JSON.stringify(places));
+      await AsyncStorage.setItem("personalFocusPlaces", JSON.stringify(places));
       await clearDraft();
       Alert.alert("성공", isEditMode ? "수정되었습니다." : "등록되었습니다.", [
         { text: "확인", onPress: () => router.replace('/(protected)/(tabs)/(focus_zone)') },

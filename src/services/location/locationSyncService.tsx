@@ -31,7 +31,9 @@ type Place = {
     blockedApps: string[]; // 최종 "패키지 목록"이 저장될 곳
 };
 
-const PLACES_STORAGE_KEY = 'focusPlaces';
+// [수정] 1. '그룹' 장소 키와 '동기화 상태' 키를 명확히 분리
+const GROUP_PLACES_STORAGE_KEY = 'groupfocusPlaces'; // 사용자가 제공한 키 이름
+const GROUP_SYNC_STATUS_KEY = 'groupSyncStatus';     // [신규] 동기화 상태 플래그 키
 const LOCK_STATE_KEY = 'currentLockState';
 
 let firestoreUnsubscribe: () => void | undefined;
@@ -109,7 +111,7 @@ const translateCategoriesToPackages = (
 
 /**
  * 사용자가 속한 그룹장소 목록을 실시간으로 감지하고 AsyncStorage에 저장
- * (수정됨: '번역' 로직 추가)
+ * (수정됨: '번역' 로직 및 '동기화 상태 플래그' 추가)
  */
 const setupFirestoreListener = (user: User) => {
     const uid = user.uid;
@@ -152,21 +154,28 @@ const setupFirestoreListener = (user: User) => {
 
                 // 4. "번역된" 최종 목록을 AsyncStorage에 저장
                 await AsyncStorage.setItem(
-                    PLACES_STORAGE_KEY,
+                    GROUP_PLACES_STORAGE_KEY, // [수정] 명확한 변수 이름 사용
                     JSON.stringify(translatedPlaces)
                 );
                 
+                // 5. [신규] 동기화 성공 플래그 설정
+                await AsyncStorage.setItem(GROUP_SYNC_STATUS_KEY, 'SYNCED');
+                
                 console.log(
-                    `[Sync Service] ${translatedPlaces.length}개의 장소를 AsyncStorage에 동기화했습니다.`
+                    `[Sync Service] ${translatedPlaces.length}개의 장소를 AsyncStorage에 동기화했습니다. (상태: SYNCED)` // [수정] 로그
                 );
                 // console.log("최종 저장 데이터:", JSON.stringify(translatedPlaces, null, 2)); // (디버깅용)
 
             } catch (error) {
                 console.error('[Sync Service] 동기화 중 심각한 오류 발생:', error);
+                // 6. [신규] 내부 오류 발생 시에도 OFFLINE 처리
+                await AsyncStorage.setItem(GROUP_SYNC_STATUS_KEY, 'OFFLINE');
             }
         },
-        (error) => {
-            console.error('[Sync Service] Firestore 리스너 오류:', error);
+        async (error) => { // [수정] onSnapshot의 에러 콜백
+            console.error('[Sync Service] Firestore 리스너 오류 (네트워크 끊김 등):', error);
+            // 7. [신규] 네트워크 오류 발생 시 OFFLINE 플래그 설정
+            await AsyncStorage.setItem(GROUP_SYNC_STATUS_KEY, 'OFFLINE');
         }
     );
 };
@@ -177,8 +186,9 @@ const stopSync = async () => {
         firestoreUnsubscribe();
         firestoreUnsubscribe = undefined;
     }
-    await AsyncStorage.removeItem(PLACES_STORAGE_KEY);
+    await AsyncStorage.removeItem(GROUP_PLACES_STORAGE_KEY); // [수정] 명확한 변수 이름 사용
     await AsyncStorage.removeItem(LOCK_STATE_KEY);
+    await AsyncStorage.removeItem(GROUP_SYNC_STATUS_KEY); // [신규] 플래그 삭제
     console.log('[Sync Service] 동기화 중지 및 AsyncStorage 초기화.');
 };
 

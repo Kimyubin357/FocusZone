@@ -9,6 +9,11 @@ const LOCATION_TASK_NAME = "background-location-task";
 const LOCK_STATE_KEY = "currentLockState"; // 현재 잠금 상태를 저장할 키
 const MIN_ACCURACY_THRESHOLD = 50; // 50m보다 오차 반경이 큰 데이터는 무시
 
+// [신규] 1. 개인 장소, 그룹 장소, 그룹 동기화 상태 키 정의
+const PERSONAL_PLACES_KEY = "personalFocusPlaces"; // 👈 개인 장소 키
+const GROUP_PLACES_KEY = "groupfocusPlaces";       // 👈 그룹 장소 키
+const GROUP_SYNC_STATUS_KEY = "groupSyncStatus"; // 👈 그룹 동기화 상태 키
+
 // =========================
 // [STATS] 집중 통계 적재 유틸 (AsyncStorage 버전)
 // =========================
@@ -114,7 +119,7 @@ type Place = {
   longitude: number;
   radius: number;
   isActive: boolean;
-  blockedApps: string[];
+  blockedApps?: string[]; // 👈 [수정] ?를 붙여 Optional로 (안전)
 };
 
 // 두 지점 간의 거리를 미터(m) 단위로 계산하는 함수
@@ -159,11 +164,32 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
     }
 
     try {
-      // 2. 저장된 장소 정보 불러오기
-      const savedPlacesRaw = await AsyncStorage.getItem("focusPlaces");
-      if (!savedPlacesRaw) return;
+      // 2a. [신규] 동기화 상태 플래그 확인
+      const groupSyncStatus = await AsyncStorage.getItem(GROUP_SYNC_STATUS_KEY);
+      const isGroupDataSynced = groupSyncStatus === 'SYNCED';
 
-      const places: Place[] = JSON.parse(savedPlacesRaw);
+      // 2b. [신규] 개인 장소 로드 (항상 사용)
+      const personalPlacesRaw = await AsyncStorage.getItem(PERSONAL_PLACES_KEY); 
+      const personalPlaces: Place[] = personalPlacesRaw ? JSON.parse(personalPlacesRaw) : [];
+
+      // 2c. [신규] 그룹 장소 로드 (조건부)
+      const groupPlacesRaw = await AsyncStorage.getItem(GROUP_PLACES_KEY);
+      
+      // 🚨 핵심: 상태가 'SYNCED'이고, 데이터가 실제로 있을 때만 groupPlaces를 로드
+      const groupPlaces: Place[] = (isGroupDataSynced && groupPlacesRaw)
+          ? JSON.parse(groupPlacesRaw)
+          : []; // 👈 동기화 안됐으면 빈 배열로 처리
+      
+      if (!isGroupDataSynced && groupPlacesRaw) {
+          console.log('[Location Task] 네트워크 오프라인. 저장된 그룹 장소를 무시합니다.');
+      }
+
+      // 2d. [신규] 두 목록을 하나로 합침
+      const places: Place[] = [...personalPlaces, ...groupPlaces];
+
+      if (places.length === 0) return; // 활성화할 장소가 없으면 종료
+
+      // (기존) const activePlaces = places.filter((p) => p.isActive); (이하 동일)
       const activePlaces = places.filter((p) => p.isActive);
 
       let isInsideAnyZone = false;
@@ -171,7 +197,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
 
       //수정됨: 현재 위치에서 반경 내에 포함된 placeId 목록도 수집
       const insidePlaceIds: string[] = []; //수정됨
-
+      
       // 3. 반경 계산: 활성화된 모든 장소에 대해 반경 내에 있는지 확인
       for (const place of activePlaces) {
         const distance = getDistance(
@@ -184,7 +210,14 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         if (distance <= place.radius) {
           isInsideAnyZone = true;
           insidePlaceIds.push(place.id); //수정됨
-          place.blockedApps.forEach((app) => combinedBlockedApps.add(app));
+          
+          // 
+          // 🚨 [수정] 
+          // 🚨 place.blockedApps가 배열일 때만 forEach를 실행 (충돌 방지)
+          // 
+          if (place.blockedApps && Array.isArray(place.blockedApps)) {
+            place.blockedApps.forEach((app) => combinedBlockedApps.add(app));
+          }
         }
       }
 
@@ -231,7 +264,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
 
       if (hasStateChanged) {
         console.log(
-          `State changed to ${newLockState}. Apps:`,
+          `[Location Task] State changed to ${newLockState}. Apps:`,
           appsToBlock,
           "Inside:",
           insidePlaceIds
@@ -248,7 +281,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         );
       }
     } catch (err) {
-      console.error("Error in background task:", err);
+      console.error("Error in background task:", err); // 👈 충돌 시 여기
     }
   }
 });
@@ -287,8 +320,8 @@ export const startLocationTask = async () => {
 
   await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
     accuracy: Location.Accuracy.BestForNavigation, // 최고 정확도 설정
-    timeInterval: 3 * 1000, // 1분마다
-    distanceInterval: 5, // 20m 이상 움직였을 때
+    timeInterval: 3 * 1000, // 3초 (테스트용)
+    distanceInterval: 5, // 5미터 (테스트용)
     showsBackgroundLocationIndicator: true,
     foregroundService: {
       notificationTitle: "집중 모드",

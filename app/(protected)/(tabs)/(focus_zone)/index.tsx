@@ -1,4 +1,3 @@
-// app/(protected)/(tabs)/(focus_zone)/index.tsx
 // ─────────────────────────────────────────────────────────────────────────────
 // 1) IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,7 +134,8 @@ export default function FocusZoneScreen() {
 
   const loadPlaces = async () => {
     try {
-      const saved = await AsyncStorage.getItem("focusPlaces");
+      // [수정] 'focusPlaces' -> 'personalFocusPlaces'로 키 이름 변경
+      const saved = await AsyncStorage.getItem("personalFocusPlaces");
       setPlaces(saved ? JSON.parse(saved) : []);
     } catch (e) {
       console.log("데이터 로드 실패:", e);
@@ -145,7 +145,8 @@ export default function FocusZoneScreen() {
 
   const savePlaces = async (updated: Place[]) => {
     try {
-      await AsyncStorage.setItem("focusPlaces", JSON.stringify(updated));
+      // [수정] 'focusPlaces' -> 'personalFocusPlaces'로 키 이름 변경
+      await AsyncStorage.setItem("personalFocusPlaces", JSON.stringify(updated));
       setPlaces(updated);
     } catch {
       Alert.alert("오류", "저장에 실패했습니다.");

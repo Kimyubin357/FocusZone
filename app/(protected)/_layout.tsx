@@ -1,7 +1,6 @@
-// app/(protected)/_layout.tsx
 import { AuthContext } from "@/src/services/auth/authContext";
 import { Redirect, Stack } from "expo-router";
-import React, { useContext, useEffect, useRef } from 'react';
+import { useContext, useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native'; // 1. AppState 임포트
 import { startLocationTask } from '../../src/services/location/locationService';
 import { startSync } from '../../src/services/location/locationSyncService';
@@ -12,8 +11,17 @@ export default function ProtectedLayout() {
     useEffect(() => {
         // (앱 부팅/로그인 시 1회 실행)
         const initializeServices = async () => {
-            await startSync(); // 1. 동기화 먼저 실행 (await)
-            startLocationTask(); // 2. 동기화가 끝나면 위치 작업 시작
+            // 1. 동기화 *리스너* 실행 (이 함수는 즉시 리턴됩니다)
+            startSync(); 
+
+            // 🚨 [수정] 경합 상태(Race Condition) 방지를 위한 임시 딜레이
+            // startSync()가 Firestore에서 데이터를 받아 AsyncStorage에 저장할 시간을 줍니다.
+            console.log("Waiting 3 seconds for initial sync...");
+            await new Promise(resolve => setTimeout(resolve, 3000)); // 3초 대기
+            console.log("Wait complete. Starting location task.");
+            
+            // 2. 동기화가 (아마도) 끝난 후 위치 작업 시작
+            startLocationTask();
         };
 
         initializeServices();
