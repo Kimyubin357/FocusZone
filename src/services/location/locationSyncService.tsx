@@ -1,4 +1,3 @@
-// src/services/location/locationSyncService.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import {
@@ -8,7 +7,7 @@ import {
     query,
     where,
 } from 'firebase/firestore';
-import { NativeModules } from 'react-native'; // 1. NativeModules 임포트
+import { NativeModules } from 'react-native';
 import { auth, db } from '../../../firebaseConfig';
 
 // 네이티브 모듈에서 가져올 앱 정보 타입
@@ -31,21 +30,22 @@ type Place = {
     blockedApps: string[]; // 최종 "패키지 목록"이 저장될 곳
 };
 
-// [수정] 1. '그룹' 장소 키와 '동기화 상태' 키를 명확히 분리
-const GROUP_PLACES_STORAGE_KEY = 'groupfocusPlaces'; // 사용자가 제공한 키 이름
-const GROUP_SYNC_STATUS_KEY = 'groupSyncStatus';     // [신규] 동기화 상태 플래그 키
+const GROUP_PLACES_STORAGE_KEY = 'groupfocusPlaces';
+const GROUP_SYNC_STATUS_KEY = 'groupSyncStatus';
 const LOCK_STATE_KEY = 'currentLockState';
+
+// 🚨 [신규] 'locationService'가 참조할 카테고리-앱 맵 키
+// 🚨 이 키는 locationService.tsx의 CATEGORIZED_APPS_KEY와 *반드시* 일치해야 함
+const CATEGORIZED_APPS_KEY = "categorizedInstalledApps";
 
 let firestoreUnsubscribe: () => void | undefined;
 
 /**
  * Firestore 문서를 'Place' 객체로 변환
- * (참고: 이 단계에서 'blockedApps' 필드에는 아직 "카테고리"가 들어 있습니다)
  */
 const transformDocToPlace = (doc: DocumentData): Place | null => {
     const data = doc.data();
 
-    // (필수 필드 확인 로직은 동일)
     if (
         !data.groupName ||
         !data.address ||
@@ -64,22 +64,22 @@ const transformDocToPlace = (doc: DocumentData): Place | null => {
         latitude: data.latitude,
         longitude: data.longitude,
         radius: data.radius,
-        isActive: data.activate ?? false,
-        // ✅ 중요: Firestore의 'blockedAppCategories'를 'blockedApps'로 매핑
-        // 이 배열은 "번역" 단계를 거치기 전까지 ["Social", "Game"]을 담고 있습니다.
+        // 🚨 [핵심 수정] data.activate -> data.isActive
+        isActive: data.isActive ?? false, // 👈 DB의 'isActive' 필드 참조
+        // (아직 번역 전) 카테고리 목록
         blockedApps: data.blockedAppCategories ?? [],
     };
 };
 
 /**
- * (신규) 카테고리 목록을 실제 패키지 목록으로 '번역'하는 헬퍼 함수
+ * 카테고리 목록을 실제 패키지 목록으로 '번역'하는 헬퍼 함수
+ * (수정: 카테고리 맵을 AsyncStorage에도 저장)
  */
 const translateCategoriesToPackages = (
     places: Place[],
     installedApps: InstalledApp[]
-): Place[] => {
-    // 1. 빠른 조회를 위한 카테고리 -> 패키지 맵 생성
-    // 예: { "social": ["com.instagram.android", "com.facebook.katana"] }
+): { translatedPlaces: Place[], categoryMap: Map<string, string[]> } => { // 👈 반환 타입 수정
+    // 1. 카테고리 -> 패키지 맵 생성
     const categoryMap = new Map<string, string[]>();
     for (const app of installedApps) {
         const appCat = app.category.toLowerCase(); // "Social" -> "social"
@@ -90,7 +90,7 @@ const translateCategoriesToPackages = (
     }
 
     // 2. 장소 목록을 순회하며 'blockedApps' 필드를 번역된 패키지 목록으로 교체
-    return places.map(place => {
+    const translatedPlaces = places.map(place => {
         const finalBlockedPackages = new Set<string>();
 
         // place.blockedApps는 현재 ["Social", "Game"] 같은 카테고리 목록임
@@ -107,11 +107,13 @@ const translateCategoriesToPackages = (
             blockedApps: Array.from(finalBlockedPackages)
         };
     });
+
+    // 3. 맵과 목록 동시 반환
+    return { translatedPlaces, categoryMap };
 };
 
 /**
  * 사용자가 속한 그룹장소 목록을 실시간으로 감지하고 AsyncStorage에 저장
- * (수정됨: '번역' 로직 및 '동기화 상태 플래그' 추가)
  */
 const setupFirestoreListener = (user: User) => {
     const uid = user.uid;
@@ -127,73 +129,75 @@ const setupFirestoreListener = (user: User) => {
                 // 1. Firestore 문서를 (아직 번역 안 된) Place[] 배열로 변환
                 const placesWithCategories: Place[] = [];
                 snapshot.forEach((doc) => {
-                    const place = transformDocToPlace(doc); // (blockedApps: ["Social"])
+                    // 🚨 [수정 1] 'isActive'가 올바르게 설정됨
+                    const place = transformDocToPlace(doc);
                     if (place) {
                         placesWithCategories.push(place);
                     }
                 });
 
-                console.log('[Sync Debug] 1. Firestore 문서는 변환 완료.'); // 👈 로그 추가
+                console.log('[Sync Debug] 1. Firestore 문서는 변환 완료.');
 
-                // 2. ✅ (핵심) 네이티브 모듈을 호출해 설치된 앱 목록 가져오기
+                // 2. 네이티브 모듈 호출
                 const { BlockedApps } = NativeModules;
-
-                console.log('[Sync Debug] 2. 네이티브 모듈 로드. getInstalledApps 호출 시작...'); // 👈 로그 추가
-
+                console.log('[Sync Debug] 2. getInstalledApps 호출 시작...');
                 const installedApps: InstalledApp[] = await BlockedApps.getInstalledApps();
+                console.log(`[Sync Debug] 3. getInstalledApps 완료! ${installedApps.length}개 앱 발견.`);
 
-                console.log(`[Sync Debug] 3. getInstalledApps 완료! ${installedApps.length}개 앱 발견.`); // 👈 로그 추가
-
-                // 3. ✅ "번역" 단계: 카테고리 목록 -> 패키지 목록
-                const translatedPlaces = translateCategoriesToPackages(
+                // 3. "번역" 단계
+                // 🚨 [수정 2] categoryMap도 함께 받음
+                const { translatedPlaces, categoryMap } = translateCategoriesToPackages(
                     placesWithCategories,
                     installedApps
                 );
-
-                console.log('[Sync Debug] 4. 카테고리 번역 완료.'); // 👈 로그 추가
-
+                console.log('[Sync Debug] 4. 카테고리 번역 완료.');
+                
+                console.log('[Sync Debug] 5. AsyncStorage 저장 직전 데이터:', JSON.stringify(translatedPlaces, null, 2));
                 // 4. "번역된" 최종 목록을 AsyncStorage에 저장
                 await AsyncStorage.setItem(
-                    GROUP_PLACES_STORAGE_KEY, // [수정] 명확한 변수 이름 사용
-                    JSON.stringify(translatedPlaces)
+                    GROUP_PLACES_STORAGE_KEY,
+                    JSON.stringify(translatedPlaces) // (isActive: true가 이제 포함됨)
                 );
-                
-                // 5. [신규] 동기화 성공 플래그 설정
+
+                // 5. 🚨 [신규] 'locationService'가 사용할 카테고리 맵도 저장
+                // (Map은 JSON 저장이 안되므로 Object로 변환)
+                const categoryMapObject = Object.fromEntries(categoryMap);
+                await AsyncStorage.setItem(
+                    CATEGORIZED_APPS_KEY,
+                    JSON.stringify(categoryMapObject)
+                );
+
+                // 6. 동기화 성공 플래그 설정
                 await AsyncStorage.setItem(GROUP_SYNC_STATUS_KEY, 'SYNCED');
-                
+
                 console.log(
-                    `[Sync Service] ${translatedPlaces.length}개의 장소를 AsyncStorage에 동기화했습니다. (상태: SYNCED)` // [수정] 로그
+                    `[Sync Service] ${translatedPlaces.length}개의 장소를 AsyncStorage에 동기화했습니다. (상태: SYNCED)`
                 );
-                // console.log("최종 저장 데이터:", JSON.stringify(translatedPlaces, null, 2)); // (디버깅용)
 
             } catch (error) {
                 console.error('[Sync Service] 동기화 중 심각한 오류 발생:', error);
-                // 6. [신규] 내부 오류 발생 시에도 OFFLINE 처리
                 await AsyncStorage.setItem(GROUP_SYNC_STATUS_KEY, 'OFFLINE');
             }
         },
-        async (error) => { // [수정] onSnapshot의 에러 콜백
+        async (error) => {
             console.error('[Sync Service] Firestore 리스너 오류 (네트워크 끊김 등):', error);
-            // 7. [신규] 네트워크 오류 발생 시 OFFLINE 플래그 설정
             await AsyncStorage.setItem(GROUP_SYNC_STATUS_KEY, 'OFFLINE');
         }
     );
 };
 
-// ... (stopSync 함수는 동일) ...
 const stopSync = async () => {
     if (firestoreUnsubscribe) {
         firestoreUnsubscribe();
         firestoreUnsubscribe = undefined;
     }
-    await AsyncStorage.removeItem(GROUP_PLACES_STORAGE_KEY); // [수정] 명확한 변수 이름 사용
+    await AsyncStorage.removeItem(GROUP_PLACES_STORAGE_KEY);
     await AsyncStorage.removeItem(LOCK_STATE_KEY);
-    await AsyncStorage.removeItem(GROUP_SYNC_STATUS_KEY); // [신규] 플래그 삭제
+    await AsyncStorage.removeItem(GROUP_SYNC_STATUS_KEY);
+    await AsyncStorage.removeItem(CATEGORIZED_APPS_KEY); // 🚨 [신규] 맵 삭제
     console.log('[Sync Service] 동기화 중지 및 AsyncStorage 초기화.');
 };
 
-
-// ... (startSync 함수는 동일) ...
 export const startSync = () => {
     onAuthStateChanged(auth, (user) => {
         if (user) {

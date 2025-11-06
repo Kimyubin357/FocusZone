@@ -1,3 +1,4 @@
+// src/services/location/locationService.tsx
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
@@ -6,25 +7,23 @@ import { Alert, NativeModules } from "react-native";
 // 네이티브 모듈 및 상수 정의
 const { BlockedApps } = NativeModules;
 const LOCATION_TASK_NAME = "background-location-task";
-const LOCK_STATE_KEY = "currentLockState"; // 현재 잠금 상태를 저장할 키
-const MIN_ACCURACY_THRESHOLD = 50; // 50m보다 오차 반경이 큰 데이터는 무시
+const LOCK_STATE_KEY = "currentLockState";
+const MIN_ACCURACY_THRESHOLD = 50;
 
-// [신규] 1. 개인 장소, 그룹 장소, 그룹 동기화 상태 키 정의
-const PERSONAL_PLACES_KEY = "personalFocusPlaces"; // 👈 개인 장소 키
-const GROUP_PLACES_KEY = "groupfocusPlaces";       // 👈 그룹 장소 키
-const GROUP_SYNC_STATUS_KEY = "groupSyncStatus"; // 👈 그룹 동기화 상태 키
+// [수정] 1. 사용하는 모든 키 정의
+const PERSONAL_PLACES_KEY = "personalFocusPlaces";
+const GROUP_PLACES_KEY = "groupfocusPlaces";
+const GROUP_SYNC_STATUS_KEY = "groupSyncStatus";
+
+// 🚨 'locationSyncService'가 이미 카테고리 번역을 완료했으므로,
+// 🚨 이 파일(locationService)은 CATEGORIZED_APPS_KEY가 *필요 없습니다.*
 
 // =========================
-// [STATS] 집중 통계 적재 유틸 (AsyncStorage 버전)
+// [STATS] 통계 유틸 (기존과 동일)
 // =========================
-
-//수정됨: 통계용 현재 세션/일자별 세션 저장 키
-const STATS_CUR_KEY = (userId: string) => `currentSessions:${userId}`; // [{placeId, startedAt}]
-//수정됨: 특정 일자 세션 로그 키
+const STATS_CUR_KEY = (userId: string) => `currentSessions:${userId}`;
 const STATS_DAY_KEY = (u: string, p: string, ymd: string) =>
   `stats:${u}:${p}:${ymd}`;
-
-//수정됨: 통계 유틸 타입
 type CurrentSession = { placeId: string; startedAt: number };
 type FinishedSession = {
   id: string;
@@ -33,62 +32,54 @@ type FinishedSession = {
   endedAt: number;
   durationMs: number;
 };
-
-//수정됨: 날짜 포맷(Y-M-D)
 function toYMD(date: Date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
-
-//수정됨: 진입 로깅
-export async function statsLogEnter({
-  userId = "local",
-  placeId,
-  startedAt = Date.now(),
-}: {
-  userId?: string;
-  placeId: string;
-  startedAt?: number;
-}) {
+export async function statsLogEnter(
+  {
+    userId = "local",
+    placeId,
+    startedAt = Date.now(),
+  }: {
+    userId?: string;
+    placeId: string;
+    startedAt?: number;
+  }) {
   try {
     const key = STATS_CUR_KEY(userId);
     const raw = await AsyncStorage.getItem(key);
     const cur: CurrentSession[] = raw ? JSON.parse(raw) : [];
-    // 중복 진입 방지
     if (!cur.find((c) => c.placeId === placeId)) {
       cur.push({ placeId, startedAt });
       await AsyncStorage.setItem(key, JSON.stringify(cur));
-      //console.log('[STATS] Enter logged:', placeId, new Date(startedAt).toISOString());
     }
   } catch (e) {
     console.log("[STATS] logEnter error", e);
   }
 }
-
-//수정됨: 이탈 로깅
-export async function statsLogExit({
-  userId = "local",
-  placeId,
-  endedAt = Date.now(),
-}: {
-  userId?: string;
-  placeId: string;
-  endedAt?: number;
-}) {
+export async function statsLogExit(
+  {
+    userId = "local",
+    placeId,
+    endedAt = Date.now(),
+  }: {
+    userId?: string;
+    placeId: string;
+    endedAt?: number;
+  }) {
   try {
     const curKey = STATS_CUR_KEY(userId);
     const raw = await AsyncStorage.getItem(curKey);
     const cur: CurrentSession[] = raw ? JSON.parse(raw) : [];
     const row = cur.find((c) => c.placeId === placeId);
-    if (!row) return; // 진입 기록 없음
+    if (!row) return;
 
-    // 현재 세션 제거
     const remain = cur.filter((c) => c.placeId !== placeId);
     await AsyncStorage.setItem(curKey, JSON.stringify(remain));
 
-    // 완료 세션 저장
     const startedAt = row.startedAt;
     const durationMs = Math.max(0, endedAt - startedAt);
     const dayKey = STATS_DAY_KEY(userId, placeId, toYMD(new Date(startedAt)));
@@ -102,14 +93,12 @@ export async function statsLogExit({
       durationMs,
     });
     await AsyncStorage.setItem(dayKey, JSON.stringify(day));
-    //console.log('[STATS] Exit logged:', placeId, new Date(endedAt).toISOString(), 'dur:', durationMs);
   } catch (e) {
     console.log("[STATS] logExit error", e);
   }
 }
-
 // =========================
-// 데이터 타입 정의 (index.tsx와 일치시키는 것이 좋습니다)
+// 데이터 타입 정의
 // =========================
 type Place = {
   id: string;
@@ -119,17 +108,19 @@ type Place = {
   longitude: number;
   radius: number;
   isActive: boolean;
-  blockedApps?: string[]; // 👈 [수정] ?를 붙여 Optional로 (안전)
+  blockedApps: string[]; // 👈 Sync 서비스가 번역한 최종 목록
 };
 
-// 두 지점 간의 거리를 미터(m) 단위로 계산하는 함수
+// =========================
+// 유틸 함수 (기존과 동일)
+// =========================
 const getDistance = (
   lat1: number,
   lon1: number,
   lat2: number,
   lon2: number
 ) => {
-  const R = 6371e3; // 지구 반지름 (미터)
+  const R = 6371e3;
   const φ1 = (lat1 * Math.PI) / 180;
   const φ2 = (lat2 * Math.PI) / 180;
   const Δφ = ((lat2 - lat1) * Math.PI) / 180;
@@ -140,12 +131,13 @@ const getDistance = (
     Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-  return R * c; // 미터 단위 거리
+  return R * c;
 };
 
-/**
- * 백그라운드 위치 추적 작업 정의
- */
+
+// =============================================================
+// 🚨 [수정 2] 백그라운드 위치 추적 작업 (데이터 정제 로직 추가)
+// =============================================================
 TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
   if (error) {
     console.error("TaskManager Error:", error);
@@ -155,7 +147,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
     const { locations } = data as any;
     const currentLocation = locations[0];
 
-    // 1. 정확도 필터링: 오차가 너무 큰 데이터는 무시
+    // 1. 정확도 필터링
     if (currentLocation?.coords?.accuracy > MIN_ACCURACY_THRESHOLD) {
       console.log(
         `Ignoring inaccurate location. Accuracy: ${currentLocation.coords.accuracy}m`
@@ -164,41 +156,85 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
     }
 
     try {
-      // 2a. [신규] 동기화 상태 플래그 확인
+      // 2a. 동기화 상태 플래그 확인
       const groupSyncStatus = await AsyncStorage.getItem(GROUP_SYNC_STATUS_KEY);
       const isGroupDataSynced = groupSyncStatus === 'SYNCED';
 
-      // 2b. [신규] 개인 장소 로드 (항상 사용)
-      const personalPlacesRaw = await AsyncStorage.getItem(PERSONAL_PLACES_KEY); 
-      const personalPlaces: Place[] = personalPlacesRaw ? JSON.parse(personalPlacesRaw) : [];
-
-      // 2c. [신규] 그룹 장소 로드 (조건부)
-      const groupPlacesRaw = await AsyncStorage.getItem(GROUP_PLACES_KEY);
-      
-      // 🚨 핵심: 상태가 'SYNCED'이고, 데이터가 실제로 있을 때만 groupPlaces를 로드
-      const groupPlaces: Place[] = (isGroupDataSynced && groupPlacesRaw)
-          ? JSON.parse(groupPlacesRaw)
-          : []; // 👈 동기화 안됐으면 빈 배열로 처리
-      
-      if (!isGroupDataSynced && groupPlacesRaw) {
-          console.log('[Location Task] 네트워크 오프라인. 저장된 그룹 장소를 무시합니다.');
+      // 2b. [핵심 수정] 개인 장소 로드 (안전하게 파싱)
+      const personalPlacesRaw = await AsyncStorage.getItem(PERSONAL_PLACES_KEY);
+      let personalPlaces: Place[] = [];
+      if (personalPlacesRaw) {
+        try {
+          const parsed = JSON.parse(personalPlacesRaw);
+          // 🚨 [안전장치 1] 배열이 맞는지, 
+          // 🚨 [안전장치 2] 내부에 null이나 id 없는 객체가 없는지 확인
+          if (Array.isArray(parsed)) {
+            personalPlaces = parsed.filter(p => p && p.id);
+          }
+        } catch (parseError) {
+          console.error("Failed to parse PERSONAL_PLACES_KEY:", parseError);
+          // (파싱 실패 시 안전하게 빈 배열 유지)
+        }
       }
 
-      // 2d. [신규] 두 목록을 하나로 합침
+      // 2c. [핵심 수정] 그룹 장소 로드 (안전하게 파싱)
+      const groupPlacesRaw = await AsyncStorage.getItem(GROUP_PLACES_KEY);
+      let groupPlaces: Place[] = [];
+
+      if (isGroupDataSynced && groupPlacesRaw) {
+        try {
+          const parsedGroupPlaces: any[] | null = JSON.parse(groupPlacesRaw);
+
+          // 🚨 [안전장치 1] 배열이 맞는지,
+          if (Array.isArray(parsedGroupPlaces)) {
+            // 🚨 [안전장치 2] 'locationSyncService'가 이미 번역/정제했으므로,
+            // 여기서는 null/id 없는 항목만 제거
+            groupPlaces = parsedGroupPlaces
+              .filter(p => p && p.id);
+          }
+          // ✅ [디버그 추가]
+          console.log('[Location Debug] groupPlaces 불러옴:', groupPlaces);
+        } catch (parseError) {
+          console.error("Failed to parse GROUP_PLACES_KEY:", parseError);
+          // (파싱 실패 시 안전하게 빈 배열 유지)
+        }
+      } else if (!isGroupDataSynced && groupPlacesRaw) {
+        console.log('[Location Task] 네트워크 오프라인. 저장된 그룹 장소를 무시합니다.');
+      }
+
+      // 2d. [완성] 정제/변환된 두 목록을 하나로 합침
       const places: Place[] = [...personalPlaces, ...groupPlaces];
 
-      if (places.length === 0) return; // 활성화할 장소가 없으면 종료
+      // 3. [핵심 수정] 장소가 없으면 잠금 해제 처리 (예외처리)
+      if (places.length === 0) {
+        const lastLockStateRaw = await AsyncStorage.getItem(LOCK_STATE_KEY);
+        if (lastLockStateRaw) {
+          const lastLockState: { state?: "LOCKED" | "UNLOCKED" } = JSON.parse(lastLockStateRaw);
+          // 🚨 [수정] 잠긴 상태일 때만 해제 및 이탈 로깅
+          if (lastLockState.state === "LOCKED") {
+            console.log("[Location Task] No active places found. Unlocking.");
+            await BlockedApps.setBlockedApps([]);
 
-      // (기존) const activePlaces = places.filter((p) => p.isActive); (이하 동일)
+            // 이탈 로깅
+            const inside = (lastLockState as any).insidePlaceIds || [];
+            for (const pid of inside) {
+              await statsLogExit({ userId: "local", placeId: pid });
+            }
+
+            // 🚨 이탈 로깅 후 상태 변경 (순서 중요)
+            await AsyncStorage.setItem(LOCK_STATE_KEY, JSON.stringify({ state: "UNLOCKED", apps: [], insidePlaceIds: [] }));
+          }
+        }
+        return; // 활성화할 장소가 없으면 종료
+      }
+
+      // 4. 반경 계산 (정제된 데이터로 안전하게 실행)
       const activePlaces = places.filter((p) => p.isActive);
 
       let isInsideAnyZone = false;
       let combinedBlockedApps = new Set<string>();
+      const insidePlaceIds: string[] = [];
 
-      //수정됨: 현재 위치에서 반경 내에 포함된 placeId 목록도 수집
-      const insidePlaceIds: string[] = []; //수정됨
-      
-      // 3. 반경 계산: 활성화된 모든 장소에 대해 반경 내에 있는지 확인
       for (const place of activePlaces) {
         const distance = getDistance(
           currentLocation.coords.latitude,
@@ -206,15 +242,15 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           place.latitude,
           place.longitude
         );
+        console.log(
+          `[Location Debug] Checking ${place.name}: distance=${distance.toFixed(1)}m / radius=${place.radius}`
+        );
 
         if (distance <= place.radius) {
           isInsideAnyZone = true;
-          insidePlaceIds.push(place.id); //수정됨
-          
-          // 
-          // 🚨 [수정] 
-          // 🚨 place.blockedApps가 배열일 때만 forEach를 실행 (충돌 방지)
-          // 
+          insidePlaceIds.push(place.id);
+
+          // 🚨 [안전장치 3] 'blockedApps'가 배열이 아닐 경우 방어
           if (place.blockedApps && Array.isArray(place.blockedApps)) {
             place.blockedApps.forEach((app) => combinedBlockedApps.add(app));
           }
@@ -223,7 +259,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
 
       const appsToBlock = Array.from(combinedBlockedApps);
 
-      //수정됨: 이전 상태(잠금/앱/반경내 장소 ID들) 로드
+      // 5. 상태 관리 (기존과 동일)
       const lastLockStateRaw = await AsyncStorage.getItem(LOCK_STATE_KEY);
       const lastLockState: {
         state?: "LOCKED" | "UNLOCKED";
@@ -231,22 +267,20 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         insidePlaceIds?: string[];
       } = lastLockStateRaw ? JSON.parse(lastLockStateRaw) : {};
 
-      const prevInside = new Set(lastLockState.insidePlaceIds || []); //수정됨
-      const nowInside = new Set(insidePlaceIds); //수정됨
+      const prevInside = new Set(lastLockState.insidePlaceIds || []);
+      const nowInside = new Set(insidePlaceIds);
 
-      //수정됨: 진입/이탈 placeId 계산
+      // 진입/이탈 placeId 계산
       const entered: string[] = [];
       const exited: string[] = [];
-      // nowInside 중 prev에 없던 것 = 새로 진입
       nowInside.forEach((id) => {
         if (!prevInside.has(id)) entered.push(id);
       });
-      // prevInside 중 now에 없던 것 = 이탈
       prevInside.forEach((id) => {
         if (!nowInside.has(id)) exited.push(id);
       });
 
-      //수정됨: 통계 로깅(진입/이탈)
+      // 통계 로깅(진입/이탈)
       for (const pid of entered) {
         await statsLogEnter({ userId: "local", placeId: pid });
       }
@@ -254,13 +288,13 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         await statsLogExit({ userId: "local", placeId: pid });
       }
 
-      // 4. 상태 관리: 이전 상태와 달라졌을 때만 네이티브 모듈 호출
+      // 상태 변경 확인
       const newLockState = isInsideAnyZone ? "LOCKED" : "UNLOCKED";
       const hasStateChanged =
         newLockState !== lastLockState.state ||
         JSON.stringify(appsToBlock) !== JSON.stringify(lastLockState.apps) ||
         JSON.stringify(insidePlaceIds.sort()) !==
-          JSON.stringify((lastLockState.insidePlaceIds || []).sort()); //수정됨
+        JSON.stringify((lastLockState.insidePlaceIds || []).sort());
 
       if (hasStateChanged) {
         console.log(
@@ -268,9 +302,14 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           appsToBlock,
           "Inside:",
           insidePlaceIds
-        ); //수정됨
+        );
+        console.log(
+          '[Location Debug] setBlockedApps 호출 준비:',
+          isInsideAnyZone,
+          appsToBlock.length,
+          '개 앱'
+        );
         await BlockedApps.setBlockedApps(isInsideAnyZone ? appsToBlock : []);
-        //수정됨: insidePlaceIds 함께 저장
         await AsyncStorage.setItem(
           LOCK_STATE_KEY,
           JSON.stringify({
@@ -281,7 +320,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
         );
       }
     } catch (err) {
-      console.error("Error in background task:", err); // 👈 충돌 시 여기
+      console.error("Error in background task:", err); // 👈 (충돌 시 여기)
     }
   }
 });
@@ -290,6 +329,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
  * 위치 추적 시작 함수 (UI에서 호출)
  */
 export const startLocationTask = async () => {
+  // ... (기존과 동일)
   const { status: foregroundStatus } =
     await Location.requestForegroundPermissionsAsync();
   if (foregroundStatus !== "granted") {
@@ -319,7 +359,7 @@ export const startLocationTask = async () => {
   }
 
   await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-    accuracy: Location.Accuracy.BestForNavigation, // 최고 정확도 설정
+    accuracy: Location.Accuracy.BestForNavigation,
     timeInterval: 3 * 1000, // 3초 (테스트용)
     distanceInterval: 5, // 5미터 (테스트용)
     showsBackgroundLocationIndicator: true,
@@ -336,13 +376,14 @@ export const startLocationTask = async () => {
  * 위치 추적 중지 함수 (UI에서 호출)
  */
 export const stopLocationTask = async () => {
+  // ... (기존과 동일)
   const isTracking = await Location.hasStartedLocationUpdatesAsync(
     LOCATION_TASK_NAME
   );
   if (isTracking) {
     await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
 
-    //수정됨: 중지 시, 반경 내에 있던 모든 장소에 대해 이탈 로깅 처리
+    // 중지 시, 이탈 로깅 처리
     try {
       const lastLockStateRaw = await AsyncStorage.getItem(LOCK_STATE_KEY);
       const lastLockState: { insidePlaceIds?: string[] } = lastLockStateRaw
@@ -353,7 +394,7 @@ export const stopLocationTask = async () => {
         await statsLogExit({ userId: "local", placeId: pid });
       }
     } catch (e) {
-      console.log("[STATS] stopLocationTask finalize error", e); //수정됨
+      console.log("[STATS] stopLocationTask finalize error", e);
     }
 
     // 서비스 중지 시에는 무조건 잠금 해제

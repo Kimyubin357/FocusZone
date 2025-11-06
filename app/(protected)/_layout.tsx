@@ -1,3 +1,4 @@
+// app/(protected)/_layout.tsx
 import { AuthContext } from "@/src/services/auth/authContext";
 import { Redirect, Stack } from "expo-router";
 import { useContext, useEffect, useRef } from 'react';

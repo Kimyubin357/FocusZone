@@ -435,9 +435,7 @@ export default function AddGroupPlace() {
 
           inviteCode: inviteCode,
 
-          // memberCount: 1, // (참고: 이 필드는 Cloud Functions로 관리하는 것이 더 정확합니다)
-
-          // presentMemberCount: 0, // (실시간 데이터이므로 members 컬렉션 집계가 나음)
+          memberIds: [user.uid],   // 생성 시 만든 사람 UID 추가
 
           createdAt: serverTimestamp(),
 
