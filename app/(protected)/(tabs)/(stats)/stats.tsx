@@ -1,18 +1,19 @@
 // [STATS] UPDATED: 일 단위 총 집중 시간 = (기존 하루 총합 + 진행 중 시간) 을 HH:mm:ss로 실시간 표시
 // - '+ 00:00:00 진행 중' 보조 문구 제거
 // - 주/월 화면은 기존 HH:mm 유지
-// - 기존 로직/다른 파일 미변경
+// - "진입 & 이탈 시간"을 최신순 카드 + 페이지네이션(1 2 3 …)으로 표시
+// - "진입 & 이탈 시간" 목록은 1초마다 AsyncStorage를 폴링해 라이브 갱신
+// - 카드 점 색상은 전부 초록(#10B981)
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import type { Granularity } from "../../../../src/features/stats/types";
 import { useStats } from "../../../../src/features/stats/useStats";
 import DatePager from "../../../../src/features/ui/DatePager";
 import PeriodToggle from "../../../../src/features/ui/PeriodToggle";
-// [STATS][ADDED] 완료 세션(오늘) 재합산을 위해 toYMD 사용
 import { fmtHm, toYMD } from "../../../../src/services/lib/time";
 
 /** HH:mm:ss */
@@ -42,7 +43,7 @@ function sameYmd(a: Date, b: Date) {
   );
 }
 
-// [STATS][ADDED] 시간 시작/끝 유틸 (현재 시각 막대 라이브 반영용)
+// [STATS][ADDED] 시간 시작/끝 유틸
 function startOfHour(date: Date) {
   const d = new Date(date);
   d.setMinutes(0, 0, 0);
@@ -56,8 +57,6 @@ function endOfHour(date: Date) {
 
 /**
  * [STATS][ADDED] 오늘(일 단위) 진행 중 세션의 실시간 ms 합계
- * - currentSessions:<userId> 를 1초마다 읽어서 합산
- * - anchor가 '오늘' & granularity==='day' 일 때만 동작
  */
 function useLiveTodayMs(
   userId: string,
@@ -94,8 +93,8 @@ function useLiveTodayMs(
         }
       };
 
-      tick(); // 즉시 1회
-      timer = setInterval(tick, 1000); // 1초마다 라이브 갱신
+      tick();
+      timer = setInterval(tick, 1000);
 
       return () => {
         mounted = false;
@@ -109,7 +108,6 @@ function useLiveTodayMs(
 
 /**
  * [STATS][ADDED] 오늘(일 단위) '완료된 세션' 총합(ms) 1초 재계산
- * - 이탈/비활성 직후에도 총합이 즉시 반영되도록 화면이 직접 폴링
  */
 function useFinishedTodayMs(
   userId: string,
@@ -157,9 +155,7 @@ function useFinishedTodayMs(
                   r.durationMs ??
                   Math.max(0, (r.endedAt ?? 0) - (r.startedAt ?? 0));
               }
-            } catch {
-              // ignore
-            }
+            } catch {}
           }
           if (mounted) setMs(sum);
         } catch {
@@ -167,8 +163,8 @@ function useFinishedTodayMs(
         }
       };
 
-      load(); // 즉시 1회
-      timer = setInterval(load, 1000); // 1초마다 완료 누적 재계산
+      load();
+      timer = setInterval(load, 1000);
 
       return () => {
         mounted = false;
@@ -181,9 +177,7 @@ function useFinishedTodayMs(
 }
 
 /**
- * [STATS][ADDED] 오늘(일 단위) '완료된 세션'을 24시간(0~23시) 분 단위로 누적
- * - 활성 꺼져도 막대가 사라지지 않게, 1초마다 시간별로 재집계
- * - 각 시간은 0~60분으로 캡
+ * [STATS][ADDED] 오늘(일 단위) '완료된 세션'을 24시간(0~23시) 분 단위로 누적 (1초 폴링)
  */
 function useFinishedTodayMinutesByHour(
   userId: string,
@@ -232,9 +226,7 @@ function useFinishedTodayMinutesByHour(
                 | [] = [];
               try {
                 rows = JSON.parse(raw) || [];
-              } catch {
-                // ignore
-              }
+              } catch {}
               for (const r of rows) {
                 const s = Math.max(day0, r.startedAt ?? day0);
                 const e = Math.min(dayEnd, r.endedAt ?? day0);
@@ -272,13 +264,11 @@ function useFinishedTodayMinutesByHour(
     }, [userId, anchor, granularity])
   );
 
-  return minsByHour; // 길이 24, 각 인덱스=해당 시각의 '완료 분'
+  return minsByHour;
 }
 
 /**
- * [STATS][ADDED] 오늘·일(day) 화면에서 "현재 시각의 막대"에 라이브 분(min) 얹기
- * - 매 1초 currentSessions를 읽어서 현재 시각(hour)에 해당하는 진행 중 분을 계산
- * - 반환: 길이 24 배열(해당 시간 인덱스에만 값, 나머지는 0)
+ * [STATS][ADDED] 오늘·일(day) 화면에서 "현재 시각의 막대" 라이브 분(min)
  */
 function useLiveMinutesForCurrentHour(
   userId: string,
@@ -313,7 +303,6 @@ function useLiveMinutesForCurrentHour(
           const eoh = endOfHour(now);
           const nowTs = now.getTime();
 
-          // 현재 시간대 내 진행 중 합산
           let liveMs = 0;
           for (const s of sessions) {
             const started = Math.max(s.startedAt ?? nowTs, soh);
@@ -325,7 +314,7 @@ function useLiveMinutesForCurrentHour(
 
           if (mounted) {
             const next = new Array(24).fill(0);
-            next[hourIdx] = liveMin; // 현재 시각에만 반영
+            next[hourIdx] = liveMin;
             setLiveMinByHour(next);
           }
         } catch {
@@ -333,7 +322,6 @@ function useLiveMinutesForCurrentHour(
         }
       };
 
-      // 즉시 1회 + 1초마다 새로 계산
       poll();
       timer = setInterval(poll, 1000);
 
@@ -344,10 +332,10 @@ function useLiveMinutesForCurrentHour(
     }, [userId, anchor, granularity, isTodayDayView])
   );
 
-  return liveMinByHour; // 길이 24, 현재 시각 인덱스에만 min 값
+  return liveMinByHour;
 }
 
-/** [STATS][MODIFIED] 세로형 시간별 막대그래프 (0~23시, 각 시간 0~60분 비율로 채움) */
+/** [STATS][MODIFIED] 세로형 시간별 막대그래프 */
 function DayHourBars({ minutesByHour }: { minutesByHour: number[] }) {
   return (
     <View style={{ marginTop: 20, alignItems: "center" }}>
@@ -357,7 +345,7 @@ function DayHourBars({ minutesByHour }: { minutesByHour: number[] }) {
           alignItems: "flex-end",
           justifyContent: "space-between",
           width: "100%",
-          height: 160, // 60분 = 100%
+          height: 160,
         }}
       >
         {Array.from({ length: 24 }).map((_, h) => {
@@ -388,10 +376,221 @@ function DayHourBars({ minutesByHour }: { minutesByHour: number[] }) {
   );
 }
 
+// ──────────────────────────────────────────────────────────────
+// [STATS][ADDED] Stay 카드/리스트 + 페이지네이션 + 라이브 데이터
+function fmtHHmm(ts: number) {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+function fmtKrDuration(ms: number) {
+  const totalMin = Math.max(0, Math.round(ms / 60000));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h > 0 && m > 0) return `체류 시간 : ${h}시간 ${m}분`;
+  if (h > 0) return `체류 시간 : ${h}시간`;
+  return `체류 시간 : ${m}분`;
+}
+
+/**
+ * [STATS][ADDED] 오늘(일 단위) 완료 세션들을 1초마다 읽어오는 훅 (카드 리스트 라이브 갱신용)
+ */
+function useDaySessionsLive(
+  userId: string,
+  anchor: Date,
+  granularity: Granularity
+) {
+  const [rows, setRows] = useState<
+    { startedAt: number; endedAt: number; durationMs?: number }[]
+  >([]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      let mounted = true;
+      let timer: any;
+
+      const load = async () => {
+        if (!(granularity === "day")) {
+          if (mounted) setRows([]);
+          return;
+        }
+        try {
+          const ymd = toYMD(anchor);
+          const allKeys = await AsyncStorage.getAllKeys();
+          const prefix = `stats:${userId}:`;
+          const keys = allKeys.filter(
+            (k) => k.startsWith(prefix) && k.endsWith(`:${ymd}`)
+          );
+
+          if (keys.length === 0) {
+            if (mounted) setRows([]);
+            return;
+          }
+
+          const pairs = await AsyncStorage.multiGet(keys);
+          const out: {
+            startedAt: number;
+            endedAt: number;
+            durationMs?: number;
+          }[] = [];
+          for (const [, raw] of pairs) {
+            if (!raw) continue;
+            try {
+              const arr = JSON.parse(raw) as {
+                startedAt: number;
+                endedAt: number;
+                durationMs?: number;
+              }[];
+              if (Array.isArray(arr)) out.push(...arr);
+            } catch {}
+          }
+          if (mounted) setRows(out);
+        } catch {
+          if (mounted) setRows([]);
+        }
+      };
+
+      load();
+      timer = setInterval(load, 1000);
+
+      return () => {
+        mounted = false;
+        if (timer) clearInterval(timer);
+      };
+    }, [userId, anchor, granularity])
+  );
+
+  return rows; // 완료 세션만 (진행 중은 currentSessions에 있음)
+}
+
+function StayCard({
+  startedAt,
+  endedAt,
+  durationMs,
+}: {
+  startedAt: number;
+  endedAt: number;
+  durationMs?: number;
+}) {
+  const dur = durationMs ?? Math.max(0, (endedAt ?? 0) - (startedAt ?? 0));
+  return (
+    <View style={stayStyles.card}>
+      <View style={stayStyles.row}>
+        {/* [STATS][MODIFIED] 점 색상 고정 초록 */}
+        <View style={[stayStyles.dot, { backgroundColor: "#10B981" }]} />
+        <Text style={stayStyles.mainTime}>
+          {fmtHHmm(startedAt)} <Text style={stayStyles.arrow}>→</Text>{" "}
+          {endedAt ? fmtHHmm(endedAt) : "진행 중"}
+        </Text>
+      </View>
+      <Text style={stayStyles.sub}>{fmtKrDuration(dur)}</Text>
+    </View>
+  );
+}
+
+// [STATS][ADDED] 페이지네이션 있는 리스트 (최신순)
+function PaginatedStayList({
+  rows,
+  pageSize = 5,
+}: {
+  rows: { startedAt: number; endedAt: number; durationMs?: number }[];
+  pageSize?: number;
+}) {
+  const sorted = useMemo(() => {
+    return [...(rows || [])].sort((a, b) => {
+      const da = (a.endedAt ?? a.startedAt) || 0;
+      const db = (b.endedAt ?? b.startedAt) || 0;
+      return db - da; // 최신순
+    });
+  }, [rows]);
+
+  const total = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const [page, setPage] = useState(1);
+
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return sorted.slice(start, start + pageSize);
+  }, [page, pageSize, sorted]);
+
+  const goPage = (p: number) => {
+    const clamped = Math.min(totalPages, Math.max(1, p));
+    setPage(clamped);
+  };
+
+  if (!rows || rows.length === 0) {
+    return (
+      <Text style={{ color: "#9CA3AF", marginTop: 6 }}>기록이 없습니다.</Text>
+    );
+  }
+
+  return (
+    <View style={stayStyles.wrap}>
+      {pageRows.map((r, idx) => (
+        <StayCard
+          key={`${r.startedAt}-${r.endedAt}-${idx}`}
+          startedAt={r.startedAt}
+          endedAt={r.endedAt}
+          durationMs={r.durationMs}
+        />
+      ))}
+
+      <View style={pagerStyles.container}>
+        <Pressable
+          onPress={() => goPage(page - 1)}
+          disabled={page <= 1}
+          style={[pagerStyles.navBtn, page <= 1 && pagerStyles.navBtnDisabled]}
+        >
+          <Text style={pagerStyles.navLabel}>〈</Text>
+        </Pressable>
+
+        <View style={pagerStyles.pages}>
+          {Array.from({ length: totalPages }).map((_, i) => {
+            const p = i + 1;
+            const active = p === page;
+            return (
+              <Pressable
+                key={`p-${p}`}
+                onPress={() => goPage(p)}
+                style={[
+                  pagerStyles.pageBtn,
+                  active && pagerStyles.pageBtnActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    pagerStyles.pageLabel,
+                    active && pagerStyles.pageLabelActive,
+                  ]}
+                >
+                  {p}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Pressable
+          onPress={() => goPage(page + 1)}
+          disabled={page >= totalPages}
+          style={[
+            pagerStyles.navBtn,
+            page >= totalPages && pagerStyles.navBtnDisabled,
+          ]}
+        >
+          <Text style={pagerStyles.navLabel}>〉</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+
 export default function Stats() {
   const userId = "local";
 
-  // 장소 집계는 전체("__all__") 유지 (특정 place 보기 기능이 있으면 prop/상태로 연결)
   const [placeId] = useState<string | undefined>(undefined);
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [anchor, setAnchor] = useState(new Date());
@@ -403,11 +602,9 @@ export default function Stats() {
     granularity,
   });
 
-  // [STATS][ADDED] 오늘-일 화면일 때 진행 중/완료 누적을 화면에서 직접 합산
   const liveTodayMs = useLiveTodayMs(userId, anchor, granularity);
   const finishedTodayMs = useFinishedTodayMs(userId, anchor, granularity);
 
-  // [STATS][MODIFIED] Day&오늘: (완료 누적 + 라이브), 그 외: 기존 합계
   const displayTotalMs =
     granularity === "day" && sameYmd(anchor, new Date())
       ? (finishedTodayMs || 0) + (liveTodayMs || 0)
@@ -423,13 +620,9 @@ export default function Stats() {
     [granularity]
   );
 
-  // [STATS][MODIFIED] 일=HH:mm:ss, 주/월=HH:mm
   const formattedTotal =
     granularity === "day" ? fmtHms(displayTotalMs) : fmtHm(displayTotalMs);
 
-  // [STATS][ADDED] 시간별 막대 데이터 구성
-  // - 오늘·일: '완료분 시간별' + '현재 시각 라이브분' 합성(0~60 캡)
-  // - 과거·주·월: useStats.timeline24(완료분) 기반으로만 표시
   const finishedByHourMinToday = useFinishedTodayMinutesByHour(
     userId,
     anchor,
@@ -440,7 +633,6 @@ export default function Stats() {
     anchor,
     granularity
   );
-
   const minutesByHour =
     granularity === "day" && sameYmd(anchor, new Date())
       ? finishedByHourMinToday.map((m, i) =>
@@ -451,6 +643,11 @@ export default function Stats() {
           Math.max(0, Math.min(60, Math.floor(ms / 60000)))
         )
       : new Array(24).fill(0);
+
+  // [STATS][ADDED] 진입/이탈 카드용 데이터: 오늘-일 화면에선 1초 폴링 훅 사용(라이브), 그 외엔 useStats.sessions 사용
+  const dayRowsLive = useDaySessionsLive(userId, anchor, granularity);
+  const stayRows =
+    granularity === "day" ? dayRowsLive : (stats as any).sessions || [];
 
   return (
     <View style={styles.container}>
@@ -464,7 +661,6 @@ export default function Stats() {
             onChange={setAnchor}
             onToday={() => setAnchor(new Date())}
           />
-          {/* [STATS][KEPT] 현재 체류중 표시 배지 (전체 집계면 자연스레 미표시) */}
           <LiveNowBadge userId={userId} placeId={placeId} />
         </View>
 
@@ -476,43 +672,24 @@ export default function Stats() {
           <View style={styles.body}>
             <View style={styles.summary}>
               <Text style={styles.summaryTitle}>{title}</Text>
-              {/* [STATS][MODIFIED] 일 화면에서는 HH:mm:ss 실시간 증가 */}
               <Text style={styles.summaryValue}>{formattedTotal}</Text>
 
-              {/* 보조 문구(‘+ 진행 중’) 제거 요구 반영 */}
               {granularity === "week" &&
-                stats.activeDaysCount !== undefined && (
+                (stats as any).activeDaysCount !== undefined && (
                   <Text style={styles.sub}>
-                    참가일 {stats.activeDaysCount} / 7일
+                    참가일 {(stats as any).activeDaysCount} / 7일
                   </Text>
                 )}
             </View>
 
-            {/* [STATS][ADDED] 시간별 막대 그래프 */}
             {granularity === "day" && (
               <DayHourBars minutesByHour={minutesByHour} />
             )}
 
-            {/* 기존 그래프(원하면 제거 가능) */}
-            {granularity === "day" && (stats as any).timeline24 && (
-              <View style={{ marginTop: 8 }}>
-                {/* <DayTimeline hours={stats.timeline24} /> */}
-              </View>
-            )}
-            {granularity === "week" && (stats as any).weekBars && (
-              <View style={{ marginTop: 8 }}>
-                {/* <WeekBars values={stats.weekBars} /> */}
-              </View>
-            )}
-            {granularity === "month" && (stats as any).monthGrid && (
-              <View style={{ marginTop: 8 }}>
-                {/* <MonthGrid days={stats.monthGrid} /> */}
-              </View>
-            )}
-
             <View style={{ marginTop: 12 }}>
               <Text style={styles.sectionTitle}>진입 & 이탈 시간</Text>
-              {/* 기존 세션 로그 리스트 영역은 유지 */}
+              {/* 최신순 + 페이지네이션 + 라이브 */}
+              <PaginatedStayList rows={stayRows} />
             </View>
           </View>
         )}
@@ -523,8 +700,6 @@ export default function Stats() {
 
 /**
  * [STATS][KEPT] 현재 체류 중인 장소가 있는지 간단히 보여주는 배지
- * - placeId가 특정되었을 때 currentSessions:<userId> 에 동일 placeId가 있으면 '진행 중'으로 표시
- * - 전체 집계("__all__")인 지금 화면 상태에선 보통 숨김
  */
 function LiveNowBadge({
   userId,
@@ -622,4 +797,101 @@ const styles = StyleSheet.create({
   },
   liveTitle: { fontSize: 12, color: "#065F46", fontWeight: "700" },
   liveTimer: { fontSize: 12, color: "#065F46", fontWeight: "700" },
+});
+
+const stayStyles = StyleSheet.create({
+  wrap: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
+  },
+  card: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  row: { flexDirection: "row", alignItems: "center" },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
+    backgroundColor: "#10B981", // 초록 고정
+  },
+  mainTime: {
+    fontSize: 16,
+    color: "#111827",
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+  },
+  arrow: { color: "#6B7280" },
+  sub: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#6B7280",
+    fontVariant: ["tabular-nums"],
+  },
+});
+
+const pagerStyles = StyleSheet.create({
+  container: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8 as any,
+  },
+  pages: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6 as any,
+    marginHorizontal: 6,
+  },
+  pageBtn: {
+    minWidth: 28,
+    height: 28,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  pageBtnActive: {
+    backgroundColor: "#111827",
+    borderColor: "#111827",
+  },
+  pageLabel: {
+    fontSize: 12,
+    color: "#374151",
+  },
+  pageLabelActive: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  navBtn: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  navBtnDisabled: {
+    opacity: 0.4,
+  },
+  navLabel: {
+    fontSize: 12,
+    color: "#374151",
+  },
 });
