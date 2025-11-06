@@ -84,12 +84,23 @@ function useLiveTodayMs(
           const sessions: { placeId: string; startedAt: number }[] = raw
             ? JSON.parse(raw)
             : [];
+
           const sod = startOfDay(new Date());
           const nowTs = Date.now();
-          const sum = sessions.reduce((acc, s) => {
-            const from = Math.max(s.startedAt ?? nowTs, sod);
-            return acc + Math.max(0, nowTs - from);
-          }, 0);
+
+          if (!sessions.length) {
+            if (mounted) setLiveMs(0);
+            return;
+          }
+
+          // ✅ 여러 개 켜져 있어도 ‘가장 오래된 startedAt’만 사용해서 1배속 증가
+          const minStarted = Math.min(
+            ...sessions.map((s) => s.startedAt ?? nowTs)
+          );
+          const from = Math.max(minStarted, sod);
+          const to = nowTs;
+          const sum = Math.max(0, to - from);
+
           if (mounted) setLiveMs(sum);
         } catch {
           if (mounted) setLiveMs(0);
@@ -300,14 +311,24 @@ function useLiveWeekMs(userId: string, anchor: Date, granularity: Granularity) {
           const sessions: { placeId: string; startedAt: number }[] = raw
             ? JSON.parse(raw)
             : [];
+
           const nowTs = Date.now();
-          const ws = startOfWeekSun(new Date()).getTime();
-          const we = endOfWeekSun(new Date()).getTime();
-          const sum = sessions.reduce((acc, s) => {
-            const from = Math.max(s.startedAt ?? nowTs, ws);
-            const to = Math.min(nowTs, we);
-            return acc + Math.max(0, to - from);
-          }, 0);
+          const ws = startOfWeekSun(new Date()).getTime(); // 이번 주 일요일 00:00
+          const we = endOfWeekSun(new Date()).getTime(); // 이번 주 토요일 23:59
+
+          if (!sessions.length) {
+            if (mounted) setMs(0);
+            return;
+          }
+
+          // ✅ 동시에 여러 장소가 켜져 있어도 가장 오래된 startedAt만 기준으로 1배속 증가
+          const minStarted = Math.min(
+            ...sessions.map((s) => s.startedAt ?? nowTs)
+          );
+          const from = Math.max(minStarted, ws);
+          const to = Math.min(nowTs, we);
+          const sum = Math.max(0, to - from);
+
           if (mounted) setMs(sum);
         } catch {
           if (mounted) setMs(0);
@@ -350,11 +371,21 @@ function useLiveMonthMs(
           const nowTs = Date.now();
           const mStart = startOfMonth(new Date()).getTime();
           const mEnd = endOfMonth(new Date()).getTime();
-          const sum = sessions.reduce((acc, s) => {
-            const from = Math.max(s.startedAt ?? nowTs, mStart);
+          // const sum = sessions.reduce((acc, s) => {
+          //   const from = Math.max(s.startedAt ?? nowTs, mStart);
+          //   const to = Math.min(nowTs, mEnd);
+          //   return acc + Math.max(0, to - from);
+          // }, 0);
+          // 여러 장소가 동시에 켜져 있어도 가장 이른 startedAt만 기준으로 함
+          let sum = 0;
+          if (sessions.length > 0) {
+            const minStarted = Math.min(
+              ...sessions.map((s) => s.startedAt ?? nowTs)
+            );
+            const from = Math.max(minStarted, mStart);
             const to = Math.min(nowTs, mEnd);
-            return acc + Math.max(0, to - from);
-          }, 0);
+            sum = Math.max(0, to - from);
+          }
           if (mounted) setMs(sum);
         } catch {
           if (mounted) setMs(0);
