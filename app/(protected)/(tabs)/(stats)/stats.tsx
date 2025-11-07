@@ -63,6 +63,170 @@ function endOfWeekSun(date: Date) {
   e.setHours(23, 59, 59, 999);
   return e;
 }
+function sumMergedIntervals(
+  intervals: { start: number; end: number }[],
+  clampStart: number,
+  clampEnd: number
+) {
+  if (!intervals.length) return 0;
+  const clipped = intervals
+    .map(({ start, end }) => {
+      const s = Math.max(start, clampStart);
+      const e = Math.min(end, clampEnd);
+      return e > s ? { start: s, end: e } : null;
+    })
+    .filter(Boolean) as { start: number; end: number }[];
+
+  if (!clipped.length) return 0;
+
+  clipped.sort((a, b) => a.start - b.start);
+  let curS = clipped[0].start;
+  let curE = clipped[0].end;
+  let total = 0;
+
+  for (let i = 1; i < clipped.length; i++) {
+    const { start, end } = clipped[i];
+    if (start <= curE) curE = Math.max(curE, end);
+    else {
+      total += curE - curS;
+      curS = start;
+      curE = end;
+    }
+  }
+  total += curE - curS;
+  return Math.max(0, total);
+}
+/** anchor + granularity 에 해당하는 기간의 [합집합 총합(ms)]을 1초마다 갱신
+ * - 완료 세션: stats:${userId}:*:${YYYY-MM-DD} 전부 모아 intervals 로 합치기
+ * - 현재 기간이 ‘지금’과 겹치면 진행 중 세션(currentSessions)도 [startedAt ~ now] 로 추가
+ * - 일/주/월 모두 ‘중복 시간은 1번만’ 카운트 (일관성 유지)
+ */
+function useMergedTotalMsForPeriod(
+  userId: string,
+  anchor: Date,
+  granularity: Granularity
+) {
+  const [ms, setMs] = React.useState(0);
+
+  // 기간 경계 계산
+  const range = React.useMemo(() => {
+    if (granularity === "day") {
+      const ymd = toYMD(anchor);
+      const start = new Date(`${ymd}T00:00:00`).getTime();
+      const end = start + 24 * 3600 * 1000 - 1;
+      return {
+        start,
+        end,
+        ymds: [ymd],
+        isCurrent: sameYmd(anchor, new Date()),
+      };
+    }
+    if (granularity === "week") {
+      const s = startOfWeekSun(anchor);
+      const e = endOfWeekSun(anchor);
+      const start = s.getTime();
+      const end = e.getTime();
+      // 주간에 포함되는 일자 ymd 목록
+      const ymds: string[] = [];
+      const d = new Date(start);
+      while (d.getTime() <= end) {
+        ymds.push(toYMD(d));
+        d.setDate(d.getDate() + 1);
+      }
+      const isCurrent =
+        startOfWeekSun(anchor).getTime() ===
+        startOfWeekSun(new Date()).getTime();
+      return { start, end, ymds, isCurrent };
+    }
+    // month
+    const s = startOfMonth(anchor);
+    const e = endOfMonth(anchor);
+    const start = s.getTime();
+    const end = e.getTime();
+    const ymds: string[] = [];
+    const d = new Date(start);
+    while (d.getTime() <= end) {
+      ymds.push(toYMD(d));
+      d.setDate(d.getDate() + 1);
+    }
+    const isCurrent = sameYm(anchor, new Date());
+    return { start, end, ymds, isCurrent };
+  }, [anchor, granularity]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      let mounted = true;
+      let t: any;
+
+      const tick = async () => {
+        try {
+          const { start, end, ymds, isCurrent } = range;
+
+          // 1) 완료 세션 읽기
+          const allKeys = await AsyncStorage.getAllKeys();
+          const statsKeys = allKeys.filter(
+            (k) =>
+              k.startsWith(`stats:${userId}:`) &&
+              ymds.some((ymd) => k.endsWith(`:${ymd}`))
+          );
+
+          const pairs = statsKeys.length
+            ? await AsyncStorage.multiGet(statsKeys)
+            : [];
+
+          const intervals: { start: number; end: number }[] = [];
+          for (const [, raw] of pairs) {
+            if (!raw) continue;
+            try {
+              const rows: { startedAt: number; endedAt: number }[] =
+                JSON.parse(raw) || [];
+              for (const r of rows) {
+                if (r.startedAt && r.endedAt) {
+                  intervals.push({ start: r.startedAt, end: r.endedAt });
+                }
+              }
+            } catch {}
+          }
+
+          // 2) 현재 기간이면 진행 중 세션도 구간 추가
+          if (isCurrent) {
+            const nowTs = Date.now();
+            const curRaw = await AsyncStorage.getItem(
+              `currentSessions:${userId}`
+            );
+            const cur: { placeId: string; startedAt: number }[] = curRaw
+              ? JSON.parse(curRaw)
+              : [];
+            for (const s of cur) {
+              if (!s.startedAt) continue;
+              intervals.push({ start: s.startedAt, end: nowTs });
+            }
+          }
+
+          // 3) 합집합 병합 합계
+          const total = sumMergedIntervals(intervals, start, end);
+          if (mounted) setMs(total);
+        } catch {
+          if (mounted) setMs(0);
+        }
+      };
+
+      tick();
+      t = setInterval(tick, 1000);
+      return () => {
+        mounted = false;
+        clearInterval(t);
+      };
+    }, [userId, range])
+  );
+
+  return ms;
+}
+
+/**
+ * [FIX] 오늘(day) 화면에서 '완료+진행중'을 합집합으로 병합해 총 ms 반환
+ * - 하나를 끄는 순간에도 중복 없이 부드럽게 증가
+ */
 
 /* ───────── Day: 라이브 총합 / 완료합 / 시간별 막대 ───────── */
 function useLiveTodayMs(
@@ -115,59 +279,6 @@ function useLiveTodayMs(
     }, [userId, anchor, granularity])
   );
   return liveMs;
-}
-
-function useFinishedTodayMs(
-  userId: string,
-  anchor: Date,
-  granularity: Granularity
-) {
-  const [ms, setMs] = useState(0);
-  useFocusEffect(
-    React.useCallback(() => {
-      let mounted = true;
-      const load = async () => {
-        if (!(granularity === "day" && sameYmd(anchor, new Date()))) {
-          if (mounted) setMs(0);
-          return;
-        }
-        try {
-          const ymd = toYMD(anchor);
-          const keys = (await AsyncStorage.getAllKeys()).filter(
-            (k) => k.startsWith(`stats:${userId}:`) && k.endsWith(`:${ymd}`)
-          );
-          if (!keys.length) {
-            if (mounted) setMs(0);
-            return;
-          }
-          const pairs = await AsyncStorage.multiGet(keys);
-          let sum = 0;
-          for (const [, raw] of pairs) {
-            if (!raw) continue;
-            try {
-              const rows: {
-                startedAt: number;
-                endedAt: number;
-                durationMs?: number;
-              }[] = JSON.parse(raw) || [];
-              for (const r of rows)
-                sum += r.durationMs ?? Math.max(0, r.endedAt - r.startedAt);
-            } catch {}
-          }
-          if (mounted) setMs(sum);
-        } catch {
-          if (mounted) setMs(0);
-        }
-      };
-      load();
-      const t = setInterval(load, 1000);
-      return () => {
-        mounted = false;
-        clearInterval(t);
-      };
-    }, [userId, anchor, granularity])
-  );
-  return ms;
 }
 
 function useFinishedTodayMinutesByHour(
@@ -293,116 +404,8 @@ function useLiveMinutesForCurrentHour(
 }
 
 /* ───────── Week: 라이브 총합 ───────── */
-function useLiveWeekMs(userId: string, anchor: Date, granularity: Granularity) {
-  const [ms, setMs] = useState(0);
-  const isThisWeek =
-    granularity === "week" &&
-    startOfWeekSun(anchor).getTime() === startOfWeekSun(new Date()).getTime();
-  useFocusEffect(
-    React.useCallback(() => {
-      let mounted = true;
-      const tick = async () => {
-        if (!isThisWeek) {
-          if (mounted) setMs(0);
-          return;
-        }
-        try {
-          const raw = await AsyncStorage.getItem(`currentSessions:${userId}`);
-          const sessions: { placeId: string; startedAt: number }[] = raw
-            ? JSON.parse(raw)
-            : [];
-
-          const nowTs = Date.now();
-          const ws = startOfWeekSun(new Date()).getTime(); // 이번 주 일요일 00:00
-          const we = endOfWeekSun(new Date()).getTime(); // 이번 주 토요일 23:59
-
-          if (!sessions.length) {
-            if (mounted) setMs(0);
-            return;
-          }
-
-          // ✅ 동시에 여러 장소가 켜져 있어도 가장 오래된 startedAt만 기준으로 1배속 증가
-          const minStarted = Math.min(
-            ...sessions.map((s) => s.startedAt ?? nowTs)
-          );
-          const from = Math.max(minStarted, ws);
-          const to = Math.min(nowTs, we);
-          const sum = Math.max(0, to - from);
-
-          if (mounted) setMs(sum);
-        } catch {
-          if (mounted) setMs(0);
-        }
-      };
-      tick();
-      const t = setInterval(tick, 1000);
-      return () => {
-        mounted = false;
-        clearInterval(t);
-      };
-    }, [userId, anchor, granularity, isThisWeek])
-  );
-  return ms;
-}
 
 // [MONTH][ADD] 이번 달 화면일 때 진행중 세션 실시간 합(ms)
-function useLiveMonthMs(
-  userId: string,
-  anchor: Date,
-  granularity: Granularity
-) {
-  const [ms, setMs] = useState(0);
-  const isThisMonth = granularity === "month" && sameYm(anchor, new Date());
-
-  useFocusEffect(
-    React.useCallback(() => {
-      let mounted = true;
-
-      const tick = async () => {
-        if (!isThisMonth) {
-          if (mounted) setMs(0);
-          return;
-        }
-        try {
-          const raw = await AsyncStorage.getItem(`currentSessions:${userId}`);
-          const sessions: { placeId: string; startedAt: number }[] = raw
-            ? JSON.parse(raw)
-            : [];
-          const nowTs = Date.now();
-          const mStart = startOfMonth(new Date()).getTime();
-          const mEnd = endOfMonth(new Date()).getTime();
-          // const sum = sessions.reduce((acc, s) => {
-          //   const from = Math.max(s.startedAt ?? nowTs, mStart);
-          //   const to = Math.min(nowTs, mEnd);
-          //   return acc + Math.max(0, to - from);
-          // }, 0);
-          // 여러 장소가 동시에 켜져 있어도 가장 이른 startedAt만 기준으로 함
-          let sum = 0;
-          if (sessions.length > 0) {
-            const minStarted = Math.min(
-              ...sessions.map((s) => s.startedAt ?? nowTs)
-            );
-            const from = Math.max(minStarted, mStart);
-            const to = Math.min(nowTs, mEnd);
-            sum = Math.max(0, to - from);
-          }
-          if (mounted) setMs(sum);
-        } catch {
-          if (mounted) setMs(0);
-        }
-      };
-
-      tick();
-      const t = setInterval(tick, 1000);
-      return () => {
-        mounted = false;
-        clearInterval(t);
-      };
-    }, [userId, anchor, granularity, isThisMonth])
-  );
-
-  return ms;
-}
 
 /* ───────── Day 그래프(시간별) ───────── */
 function DayHourBars({ minutesByHour }: { minutesByHour: number[] }) {
@@ -668,7 +671,6 @@ function PaginatedStayList({
 }
 
 /* ───────── [MONTH][ADDED] 달력 히트맵 ───────── */
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 // 0~24시간(정수) → 색상 팔레트(0=회색, 24=진한 초록)
 const HOUR_COLORS = [
@@ -745,7 +747,8 @@ function MonthCalendar({
     const ymd = `${year}-${String(month + 1).padStart(2, "0")}-${String(
       d
     ).padStart(2, "0")}`;
-    const ms = map.get(ymd) || 0;
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const ms = Math.min(DAY_MS, map.get(ymd) || 0);
     cells.push({ ymd, num: d, ms });
   }
   // 7의 배수로 채우기(뒤쪽 공백)
@@ -853,6 +856,8 @@ export default function Stats() {
   const [placeId] = useState<string | undefined>(undefined);
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [anchor, setAnchor] = useState(new Date());
+  const unifiedTotalMs = useMergedTotalMsForPeriod(userId, anchor, granularity);
+  const formattedTotal = fmtHms(unifiedTotalMs);
 
   const stats = useStats({
     userId,
@@ -861,14 +866,13 @@ export default function Stats() {
     granularity,
   });
 
-  // Day
   const liveTodayMs = useLiveTodayMs(userId, anchor, granularity);
-  const finishedTodayMs = useFinishedTodayMs(userId, anchor, granularity);
   const finishedByHourMinToday = useFinishedTodayMinutesByHour(
     userId,
     anchor,
     granularity
   );
+
   const liveMinByHour = useLiveMinutesForCurrentHour(
     userId,
     anchor,
@@ -886,32 +890,29 @@ export default function Stats() {
       : new Array(24).fill(0);
 
   // [MONTH][ADD] Month
-  const liveMonthMs = useLiveMonthMs(userId, anchor, granularity);
 
   // Week
-  const liveWeekMs = useLiveWeekMs(userId, anchor, granularity);
+
   let weekBars: number[] | undefined = (stats as any).weekBars;
   if (granularity === "week" && weekBars) {
     weekBars = [...weekBars];
     const thisWeekStart = startOfWeekSun(anchor).getTime();
     if (thisWeekStart === startOfWeekSun(new Date()).getTime()) {
       const todayIdx = new Date().getDay();
-      weekBars[todayIdx] = (weekBars[todayIdx] || 0) + (liveTodayMs || 0);
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const base = weekBars[todayIdx] || 0; // 완료 누적
+      const extra = Math.min(DAY_MS - Math.min(DAY_MS, base), liveTodayMs || 0); // 24h cap
+      weekBars[todayIdx] = base + Math.max(0, extra);
     }
   }
 
   // [COMMON][MODIFIED] 표시 총합: 일/주/월 각각 라이브 더해주기
-  const baseTotal = stats?.totalMs ?? 0;
-  const displayTotalMs =
-    granularity === "day" && sameYmd(anchor, new Date())
-      ? (finishedTodayMs || 0) + (liveTodayMs || 0)
-      : granularity === "week"
-      ? baseTotal + (liveWeekMs || 0)
-      : granularity === "month"
-      ? baseTotal + (liveMonthMs || 0) // ✅ 월간 라이브 반영
-      : baseTotal;
 
-  const formattedTotal = fmtHms(displayTotalMs); // HH:mm:ss
+  // const formattedTotal = fmtHms(displayTotalMs); // HH:mm:ss
+
+  // Day(오늘): 합집합(merged)로 점프 없이 표시
+  // Week: 완료 합계 + 실시간 주간 라이브
+  // Month: 완료 합계 + 실시간 월간 라이브
 
   // 헤더 타이틀
   const title = useMemo(
@@ -941,6 +942,7 @@ export default function Stats() {
   const monthGridRaw: { date: string; totalMs: number }[] =
     (stats as any).monthGrid || [];
   const liveTodayMsForMonth = sameYm(anchor, new Date()) ? liveTodayMs : 0; // 현재 달이면 오늘칸 실시간 가산
+
   const dayRows = useDaySessionsLive(userId, anchor, granularity);
   return (
     <View style={styles.container}>
