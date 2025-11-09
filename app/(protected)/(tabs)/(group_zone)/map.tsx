@@ -23,11 +23,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 // ──────────────────────────────────────────────────────────────────────────────
 // 1) CONSTANTS / TYPES
 // ──────────────────────────────────────────────────────────────────────────────
-// ⚠️ 실제에선 .env 등으로 키 숨겨서 import 하세요
-// EXPO_PUBLIC_GOOGLE_MAPS_API_KEY 사용 권장
+const KAKAO_REST_API_KEY = "f1debfd3567cd9e9d3cc99c5c41c2b7c";
 
-// const GOOGLE_MAP_API_KEY = "AIzaSyA97bCCeZh4eR_q2fJAjm5i55YqyVdJZ6g";
-const GOOGLE_WEB_API_KEY = "AIzaSyAvid2EBP0GgrNfzKcF7goUZlQWNbrbF94";
 type SearchPlace = {
   id: string;
   place_name: string;
@@ -36,57 +33,83 @@ type SearchPlace = {
   road_address_name?: string;
   address_name?: string;
 };
-type GooglePlace = {
-  place_id: string;
-  name: string;
-  formatted_address: string;
-  geometry: {
-    location: {
-      lat: number;
-      lng: number;
-    };
-  };
-}
+
 // ──────────────────────────────────────────────────────────────────────────────
-// 2) PURE UTILS (좌표 변환 / Kakao API 호출 / 스냅)
-//    - 컴포넌트 바깥에 두어 재생성 방지 & 가독성 ↑
+// 2) PURE UTILS (컴포넌트 외부)
 // ──────────────────────────────────────────────────────────────────────────────
-// <미터 → 위도/경도 변화량 변환>
 const metersToLatDelta = (m: number) => m / 111320;
 const metersToLngDelta = (m: number, lat: number) =>
   m / (111320 * Math.cos((lat * Math.PI) / 180));
 
-/** 좌표 → 도로명 주소만 (없으면 null) */
-// Google Geocoding API 사용
+/** 좌표 → 도로명 주소 (Kakao Local API 사용) */
 async function getRoadAddressFromCoords(latitude: number, longitude: number) {
   try {
     const res = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&language=ko&key=${GOOGLE_WEB_API_KEY}`
+      `https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${longitude}&y=${latitude}&input_coord=WGS84`,
+      {
+        headers: {
+          Authorization: `KakaoAK ${KAKAO_REST_API_KEY}`,
+        },
+      }
     );
+    
     const data = await res.json();
-    const first = data?.results?.[0];
-    if (!first) return null;
+    
+    if (!data.documents || data.documents.length === 0) {
+      return null;
+    }
 
-    // 주소 컴포넌트에서 필요한 부분만 추출
-    const comps = first.address_components || [];
-    const sido = comps.find(c => c.types.includes("administrative_area_level_1"))?.long_name || "";
-    const sigungu = comps.find(c => c.types.includes("locality"))?.long_name || "";
-    const gu = comps.find(c => c.types.includes("sublocality_level_1"))?.long_name || "";
-    const road = comps.find(c => c.types.includes("route"))?.long_name || "";
-    const building = comps.find(c => c.types.includes("premise"))?.long_name || "";
-    const simpleAddress = [sido, sigungu, gu, road, building].filter(Boolean).join(" ");
-    return simpleAddress || first.formatted_address || null;
+    const doc = data.documents[0];
+    
+    // 도로명 주소 우선
+    if (doc.road_address) {
+      const ra = doc.road_address;
+      const parts: string[] = [];
+      
+      if (ra.region_1depth_name) parts.push(ra.region_1depth_name);
+      if (ra.region_2depth_name) parts.push(ra.region_2depth_name);
+      if (ra.region_3depth_name) parts.push(ra.region_3depth_name);
+      if (ra.road_name) parts.push(ra.road_name);
+      if (ra.main_building_no) {
+        if (ra.sub_building_no && ra.sub_building_no !== '0') {
+          parts.push(`${ra.main_building_no}-${ra.sub_building_no}`);
+        } else {
+          parts.push(ra.main_building_no);
+        }
+      }
+      
+      const roadAddress = parts.join(' ');
+      return roadAddress;
+    }
+    
+    // 도로명 주소 없으면 지번 주소 (동까지만)
+    if (doc.address) {
+      const addr = doc.address;
+      const parts: string[] = [];
+      
+      if (addr.region_1depth_name) parts.push(addr.region_1depth_name);
+      if (addr.region_2depth_name) parts.push(addr.region_2depth_name);
+      if (addr.region_3depth_name) parts.push(addr.region_3depth_name);
+      if (addr.region_3depth_h_name) parts.push(addr.region_3depth_h_name);
+      
+      const jibunAddress = parts.join(' ');
+      return jibunAddress;
+    }
+    
+    return null;
   } catch (e) {
-    console.error("도로명 역지오코딩 실패:", e);
+    console.error('[getRoadAddress] Error:', e);
     return null;
   }
 }
+
+/** 근처 좌표 탐색하여 도로명 주소 찾기 */
 async function findNearestRoadAddress(
-  lat: number,
-  lng: number,
-  radiusM = 25
-): Promise<{ road: string; lat: number; lng: number } | null> {
-  const candidates = [
+  latitude: number,
+  longitude: number,
+  radiusM: number = 30
+): Promise<string | null> {
+  const offsets = [
     [0, 0],
     [radiusM, 0],
     [-radiusM, 0],
@@ -96,28 +119,69 @@ async function findNearestRoadAddress(
     [radiusM, -radiusM],
     [-radiusM, radiusM],
     [-radiusM, -radiusM],
+    [radiusM / 2, 0],
+    [-radiusM / 2, 0],
+    [0, radiusM / 2],
+    [0, -radiusM / 2],
   ];
 
-  for (const [dm, dn] of candidates) {
-    const tryLat = lat + metersToLatDelta(dn);
-    const tryLng = lng + metersToLngDelta(dm, lat);
-    const road = await getRoadAddressFromCoords(tryLat, tryLng);
-    if (road) return { road, lat: tryLat, lng: tryLng };
+  for (let i = 0; i < offsets.length; i++) {
+    const [offsetX, offsetY] = offsets[i];
+    
+    const tryLat = latitude + metersToLatDelta(offsetY);
+    const tryLng = longitude + metersToLngDelta(offsetX, latitude);
+    
+    try {
+      const res = await fetch(
+        `https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${tryLng}&y=${tryLat}&input_coord=WGS84`,
+        {
+          headers: {
+            Authorization: `KakaoAK ${KAKAO_REST_API_KEY}`,
+          },
+        }
+      );
+      
+      const data = await res.json();
+      
+      if (data.documents && data.documents.length > 0) {
+        const doc = data.documents[0];
+        
+        if (doc.road_address) {
+          const ra = doc.road_address;
+          const parts: string[] = [];
+          
+          if (ra.region_1depth_name) parts.push(ra.region_1depth_name);
+          if (ra.region_2depth_name) parts.push(ra.region_2depth_name);
+          if (ra.region_3depth_name) parts.push(ra.region_3depth_name);
+          if (ra.road_name) parts.push(ra.road_name);
+          if (ra.main_building_no) {
+            if (ra.sub_building_no && ra.sub_building_no !== '0') {
+              parts.push(`${ra.main_building_no}-${ra.sub_building_no}`);
+            } else {
+              parts.push(ra.main_building_no);
+            }
+          }
+          
+          const roadAddress = parts.join(' ');
+          return roadAddress;
+        }
+      }
+    } catch (err) {
+      console.error(`[findNearestRoad] Error (${i + 1}):`, err);
+    }
   }
+  
   return null;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-/** 3) COMPONENT */
+// 3) COMPONENT
 // ──────────────────────────────────────────────────────────────────────────────
-// <구글지도를 사용하며 Google Places/Geocoding으로 검색 및 역지오코딩>
 export default function KakaoMapScreen() {
-  // 3-1) NAV / REFS / PARAMS
   const router = useRouter();
-  const params = useLocalSearchParams(); // add.tsx에서 전달된 파라미터들
-  const mapRef = useRef<MapView>(null); //지도 움직 이는 용도
+  const params = useLocalSearchParams();
+  const mapRef = useRef<MapView>(null);
 
-  // 3-2) STATE: 지도/선택/표시/검색
   const parseNumber = (v: any): number | null => {
     if (v === null || v === undefined) return null;
     const s = String(v).trim();
@@ -130,16 +194,13 @@ export default function KakaoMapScreen() {
   const initialLng = parseNumber(params.longitude) ?? 126.978;
 
   const [region, setRegion] = useState<Region>({
-    // 초기 지도 위치
     latitude: initialLat,
     longitude: initialLng,
-    latitudeDelta: 0.004, // 확대 수준
+    latitudeDelta: 0.004,
     longitudeDelta: 0.004,
   });
 
-
   const [selectedLocation, setSelectedLocation] = useState({
-    // 선택된 위치
     latitude: initialLat,
     longitude: initialLng,
   });
@@ -156,10 +217,10 @@ export default function KakaoMapScreen() {
       setRegion(next);
     }
   };
+
   const [radius, setRadius] = useState(
     params.radius ? Number(params.radius) : 100
   );
-  const [reverse, setReverse] = useState(false);
   const [address, setAddress] = useState<string>(
     (params.address as string) || ""
   );
@@ -168,46 +229,19 @@ export default function KakaoMapScreen() {
   const [results, setResults] = useState<SearchPlace[]>([]);
   const [showResults, setShowResults] = useState(false);
 
-  // 3-3) OPTIONS
-  const enableSnapToRoad = true;
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // 3-4) EFFECTS: 초기 로드 시 도로명 주소 보정
-  // ──────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       const road = await getRoadAddressFromCoords(
-        // road: 도로명 주소 getRoadAddressFromCoords 함수(카카오지도에서 묻는 함수) 사용
         selectedLocation.latitude,
         selectedLocation.longitude
       );
       if (road) {
         setAddress(road);
-      } else if (enableSnapToRoad) {
-        const snapped = await findNearestRoadAddress(
-          // 가장 가까운 도로명 좌표를 스냅
-          selectedLocation.latitude,
-          selectedLocation.longitude,
-          25 // 반경 25m 내에서 탐색
-        );
-        if (snapped) {
-          setSelectedLocation({
-            latitude: snapped.lat,
-            longitude: snapped.lng,
-          });
-          animateTo(snapped.lat, snapped.lng);
-          setAddress(snapped.road);
-        }
       }
     })();
-    // 얘야 이번 한줄은 그냥 넘어가 주세요 eslint님
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // 3-5) HANDLERS — 지도/현재위치/검색/저장 등
-  // ──────────────────────────────────────────────────────────────────────────
-  /** 지도 위치로 부드럽게 이동 */
   const animateTo = (lat: number, lng: number) => {
     const next: Region = {
       latitude: lat,
@@ -219,34 +253,37 @@ export default function KakaoMapScreen() {
     mapRef.current?.animateToRegion(next, 250);
   };
 
-  /** 반지름 슬라이더 */
   const handleSliderChange = (value: number) => setRadius(value);
 
-  /** 공통 적용: 좌표 → (도로명만) 주소 확정 + 지도/상태 업데이트 */
   const applyAddressByCoords = async (lat: number, lng: number) => {
     let road = await getRoadAddressFromCoords(lat, lng);
-    let fLat = lat;
-    let fLng = lng;
-
-    if (!road && enableSnapToRoad) {
-      const snapped = await findNearestRoadAddress(lat, lng, 25);
-      if (snapped) {
-        road = snapped.road;
-        fLat = snapped.lat;
-        fLng = snapped.lng;
+    
+    // 도로명 주소가 없으면 근처 탐색
+    if (!road || !road.includes('로') && !road.includes('길')) {
+      const nearestRoad = await findNearestRoadAddress(lat, lng, 30);
+      
+      if (nearestRoad) {
+        road = nearestRoad;
       }
     }
-    if (!road) {
-      Alert.alert("도로명 주소 필요", "도로 위 근처로 이동해 다시 눌러주세요.");
+    
+    // 도로명이 없으면 Alert
+    if (!road || (!road.includes('로') && !road.includes('길'))) {
+      Alert.alert(
+        "도로명 주소 필요", 
+        "도로명 주소가 있는 위치를 선택해주세요.\n\n현재: " + (road || "주소 없음") + "\n\n도로나 건물 근처를 클릭해주세요."
+      );
       return false;
     }
-    setSelectedLocation({ latitude: fLat, longitude: fLng });
-    animateTo(fLat, fLng);
+    
+    setSelectedLocation({ latitude: lat, longitude: lng });
+    animateTo(lat, lng);
     setAddress(road);
+    
     return true;
   };
+
   const onMapPress = async (e: MapPressEvent) => {
-    // ... (함수 내용 동일) ...
     const { latitude, longitude } = e.nativeEvent.coordinate;
     const ok = await applyAddressByCoords(latitude, longitude);
     if (ok) {
@@ -255,30 +292,35 @@ export default function KakaoMapScreen() {
     }
   };
 
-  /** 현재 위치로 이동 */
   const getCurrentLocation = async () => {
-    // ... (함수 내용 동일) ...
     try {
-      // 수정 모드: 저장 좌표 우선
       if (params.editMode === "true" && params.latitude && params.longitude) {
         const savedLat = Number(params.latitude);
         const savedLng = Number(params.longitude);
+        
         const ok = await applyAddressByCoords(savedLat, savedLng);
-        if (ok) return;
+        if (ok) {
+          return;
+        }
       }
+      
       const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.Balanced,
       });
+      
       const { latitude, longitude } = loc.coords;
+      
       const ok = await applyAddressByCoords(latitude, longitude);
-      if (ok) setShowResults(false);
+      
+      if (ok) {
+        setShowResults(false);
+      }
     } catch (error) {
-      console.error("현재 위치 실패:", error);
+      console.error('[getCurrentLocation] Error:', error);
       Alert.alert("오류", "현재 위치를 가져올 수 없습니다.");
     }
   };
 
-  /** Google Places: 장소명/주소 검색 (Text Search) */
   const searchPlaces = async () => {
     const q = query.trim();
     if (!q) {
@@ -291,27 +333,51 @@ export default function KakaoMapScreen() {
 
       const lat = region.latitude;
       const lng = region.longitude;
-      const radius = 1500;
 
-      const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&keyword=${encodeURIComponent(
+      // ⭐️ [수정] 1차 검색: 근처 1.5km 검색 (거리순)
+      let url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(
         q
-      )}&language=ko&region=KR&key=${GOOGLE_WEB_API_KEY}`;
+      )}&x=${lng}&y=${lat}&radius=1500&size=15&sort=distance`;
 
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.status !== "OK") {
-        console.error("검색 실패:", json.status, json.error_message);
-        Alert.alert("오류", "검색에 실패했습니다.");
+      let res = await fetch(url, {
+        headers: {
+          Authorization: `KakaoAK ${KAKAO_REST_API_KEY}`,
+        },
+      });
+      
+      let json = await res.json();
+      
+      // ⭐️ [추가] 근처에 결과 없으면 전국 검색 (정확도순)
+      if (!json.documents || json.documents.length === 0) {
+        url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(
+          q
+        )}&size=15&sort=accuracy`;
+        // x, y, radius 제거 → 전국 검색
+      
+        res = await fetch(url, {
+          headers: {
+            Authorization: `KakaoAK ${KAKAO_REST_API_KEY}`,
+          },
+        });
+        
+        json = await res.json();
+      }
+      
+      if (!json.documents || json.documents.length === 0) {
+        setResults([]);
+        setShowResults(false);
         return;
       }
-      const mapped: SearchPlace[] = json.results.map((p: any) => ({
-        id: p.place_id,
-        place_name: p.name,
-        x: String(p.geometry?.location?.lng ?? 0),
-        y: String(p.geometry?.location?.lat ?? 0),
-        road_address_name: p.vicinity,
-        address_name: p.vicinity,
+
+      const mapped: SearchPlace[] = json.documents.map((p: any) => ({
+        id: p.id,
+        place_name: p.place_name,
+        x: p.x,
+        y: p.y,
+        road_address_name: p.road_address_name || p.address_name,
+        address_name: p.address_name,
       }));
+      
       setResults(mapped);
       setShowResults(true);
       Keyboard.dismiss();
@@ -323,7 +389,6 @@ export default function KakaoMapScreen() {
     }
   };
 
-  /** 검색 결과 선택 → 좌표로 확정(도로명만) */
   const selectResult = async (item: SearchPlace) => {
     const lat = Number(item.y);
     const lng = Number(item.x);
@@ -332,7 +397,6 @@ export default function KakaoMapScreen() {
   };
 
   const handleContinue = () => {
-    // 1. 유효성 검사
     if (!address || address === "도로명 주소를 선택하세요") {
       Alert.alert("안내", "유효한 주소를 선택해주세요.");
       return;
@@ -344,18 +408,14 @@ export default function KakaoMapScreen() {
       return;
     }
 
-    // 2. add.tsx로 돌려보낼 파라미터 준비
     const returnParams: Record<string, any> = { 
       ...params,
-
-      // 2-2. ⭐️ 맵에서 수정한 값으로 덮어쓰기
       address: address,
       latitude: selectedLocation.latitude.toString(),
       longitude: selectedLocation.longitude.toString(),
       radius: radius.toString(),
     };
     
-    // 3. router.replace를 사용해 'add.tsx'로 파라미터를 들고 복귀
     router.replace({
       pathname: "/(protected)/(tabs)/(group_zone)/add",
       params: returnParams,
@@ -363,11 +423,10 @@ export default function KakaoMapScreen() {
   };
 
   // ──────────────────────────────────────────────────────────────────────────
-  // 3-6) RENDER
+  // RENDER
   // ──────────────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
-      {/* 검색 바 */}
       <View className="searchbar" style={styles.searchBarWrap}>
         <Ionicons
           name="search"
@@ -412,7 +471,6 @@ export default function KakaoMapScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 지도 */}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
@@ -427,7 +485,6 @@ export default function KakaoMapScreen() {
         userLocationPriority="high"
         followsUserLocation={true}
       >
-        {/* 선택 영역(원) */}
         {isValidCoord(selectedLocation.latitude, selectedLocation.longitude) && (
           <>
             <Circle
@@ -451,7 +508,6 @@ export default function KakaoMapScreen() {
         )}
       </MapView>
 
-      {/* 검색 결과 리스트 */}
       {showResults && results.length > 0 && (
         <View style={styles.resultSheet}>
           <FlatList
@@ -480,7 +536,6 @@ export default function KakaoMapScreen() {
         </View>
       )}
 
-      {/* 현재 위치 버튼 */}
       <TouchableOpacity
         style={styles.locationButton}
         onPress={getCurrentLocation}
@@ -489,7 +544,6 @@ export default function KakaoMapScreen() {
         <Ionicons name="navigate-outline" size={22} color="#000" />
       </TouchableOpacity>
 
-      {/* 하단 패널 */}
       <View style={styles.panel}>
         <View style={styles.row}>
           <Text style={styles.label}>도로명 주소</Text>
@@ -529,8 +583,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
-  // 검색 바
   searchBarWrap: {
     position: "absolute",
     top: 30,
@@ -564,8 +616,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   searchBtnText: { color: "#fff", fontSize: 12, fontWeight: "600" },
-
-  // 결과 시트
   resultSheet: {
     position: "absolute",
     top: 60,
@@ -585,8 +635,6 @@ const styles = StyleSheet.create({
   resultItem: { paddingVertical: 8 },
   resultTitle: { fontSize: 14, color: "#111", fontWeight: "600" },
   resultSub: { fontSize: 12, color: "#666", marginTop: 2 },
-
-  // 현재 위치 버튼
   locationButton: {
     position: "absolute",
     top: 90,
@@ -603,8 +651,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     zIndex: 1000,
   },
-
-  // 하단 패널
   panel: {
     position: "absolute",
     bottom: 60,

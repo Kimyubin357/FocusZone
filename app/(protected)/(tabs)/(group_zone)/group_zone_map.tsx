@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
   // ⭐️ [수정] map.tsx와 동일한 스타일
   locationButton: {
     position: "absolute",
-    top: 90, // 검색바가 있다면 그 아래 위치
+    top: 60, // 검색바가 있다면 그 아래 위치
     right: 16,
     width: 46,
     height: 46,
