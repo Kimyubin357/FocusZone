@@ -207,7 +207,7 @@ export default function GroupZone() {
           );
           const usersSnap = await getDocs(usersQuery);
           usersSnap.forEach((doc) => {
-            ownersMap.set(doc.id, doc.data().displayName ?? "그룹장");
+            ownersMap.set(doc.id, doc.data().nickname ?? "그룹장");
           });
         }
 
@@ -564,6 +564,8 @@ function GroupCard({
   const chipText = isActiveToday ? "#16A34A" : colors.muted;
   const chipLabel = isActiveToday ? "오늘 활성" : "오늘 비활성";
 
+  const myRoleLabel = item.myRole === "owner" ? "그룹장" : "그룹원";
+  const myRoleColor = item.myRole === "owner" ? colors.tint : colors.muted;
   // 메뉴 버튼 위치 측정용 ref
   const menuBtnRef = useRef<View>(null);
   const handleMenuPress = () => {
@@ -685,7 +687,21 @@ function GroupCard({
             </View>
           ))}
         </View>
+        {/* ✅ [수정] "내 역할"을 표시하는 View로 감싸기 */}
         <View style={styles.row}>
+          {/* ✅ "내 역할" 텍스트 추가 */}
+          <Text
+            style={{
+              fontWeight: "700",
+              fontSize: 14,
+              color: myRoleColor, // 상단에서 정의한 변수
+              marginRight: 8,      // 총 인원과의 간격
+            }}
+          >
+            {myRoleLabel} {/* 상단에서 정의한 변수 */}
+          </Text>
+
+          {/* (기존) 총 인원 */}
           <Ionicons
             name="people-outline"
             size={16}
