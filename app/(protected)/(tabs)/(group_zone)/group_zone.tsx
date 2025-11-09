@@ -328,7 +328,6 @@ export default function GroupZone() {
 
             Alert.alert("완료", "그룹이 삭제되었습니다.");
             // (onSnapshot이 켜져 있으므로 setList는 자동으로 갱신됨)
-
           } catch (e) {
             console.log("delete error", e);
             Alert.alert("오류", "삭제 중 문제가 발생했습니다.");
@@ -354,23 +353,43 @@ export default function GroupZone() {
   })();
 
   // 👈 [추가] 카드 클릭 핸들러
-  const onPressCard = (item: GroupItem) => {
-    if (!myUid) return;
+  // const onPressCard = (item: GroupItem) => {
+  //   if (!myUid) return;
 
+  //   const isOwner = item.userId === myUid;
+
+  //   if (isOwner) {
+  //     // 그룹장일 경우: 상세 페이지로 이동
+  //     router.push({
+  //       pathname: `/(protected)/(tabs)/(group_zone)/${item.id}`,
+  //     });
+  //   } else {
+  //     // 그룹원일 경우: 내 통계 페이지로 이동
+  //     router.push({
+  //       pathname: `/(protected)/(tabs)/(group_zone)/stats/${item.id}`,
+  //     });
+  //   }
+  // };
+  //노윤석 추가코드
+  const onPressCard = (item: GroupItem) => {
+    const myUid = auth.currentUser?.uid;
+    if (!myUid) {
+      console.log("[GroupZone] no auth user");
+      return;
+    }
     const isOwner = item.userId === myUid;
 
     if (isOwner) {
-      // 그룹장일 경우: 상세 페이지로 이동
-      router.push({
-        pathname: `/(protected)/(tabs)/(group_zone)/${item.id}`,
-      });
+      // 그룹장: 상세로
+      router.push(`/(protected)/(tabs)/(group_zone)/${item.id}`);
     } else {
-      // 그룹원일 경우: 내 통계 페이지로 이동
-      router.push({
-        pathname: `/(protected)/(tabs)/(group_zone)/stats/${item.id}`,
-      });
+      // 그룹원: 바로 내 통계(해당 그룹장소)로
+      router.push(
+        `/(protected)/(tabs)/(group_zone)/stats?groupId=${item.id}&memberId=${myUid}`
+      );
     }
   };
+  //노윤석 끝
   const colors = {
     background: "#FFFFFF",
     card: "#F8F8F8",
@@ -559,8 +578,8 @@ function GroupCard({
       ? "rgba(34,197,94,0.22)"
       : "rgba(34,197,94,0.18)"
     : theme === "dark"
-      ? hexToRgba(colors.border, 0.25)
-      : hexToRgba(colors.border, 0.35);
+    ? hexToRgba(colors.border, 0.25)
+    : hexToRgba(colors.border, 0.35);
   const chipText = isActiveToday ? "#16A34A" : colors.muted;
   const chipLabel = isActiveToday ? "오늘 활성" : "오늘 비활성";
 
@@ -593,7 +612,10 @@ function GroupCard({
           {item.groupName || "그룹장소명"}
           {/* [추가] 비활성화 표시 */}
           {item.isActive === false ? (
-            <Text style={{ color: colors.muted, fontSize: 12 }}> (비활성화)</Text>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>
+              {" "}
+              (비활성화)
+            </Text>
           ) : null}
         </Text>
         <TouchableOpacity
@@ -649,8 +671,8 @@ function GroupCard({
           const dBg = active
             ? hexToRgba(colors.tint, theme === "dark" ? 0.25 : 0.2)
             : theme === "dark"
-              ? hexToRgba(colors.border, 0.25)
-              : hexToRgba(colors.border, 0.35);
+            ? hexToRgba(colors.border, 0.25)
+            : hexToRgba(colors.border, 0.35);
           const dText = active ? colors.tint : colors.muted;
           return (
             <View
@@ -695,7 +717,7 @@ function GroupCard({
               fontWeight: "700",
               fontSize: 14,
               color: myRoleColor, // 상단에서 정의한 변수
-              marginRight: 8,      // 총 인원과의 간격
+              marginRight: 8, // 총 인원과의 간격
             }}
           >
             {myRoleLabel} {/* 상단에서 정의한 변수 */}
