@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { forceLocationTaskUpdate } from "../../../../src/services/location/locationService";
 
 export default function AddFocusPlace() {
   const router = useRouter();
@@ -168,7 +169,6 @@ export default function AddFocusPlace() {
             }
             : place
         );
-
       } else {
         // 신규
         const newPlace = {
@@ -178,17 +178,26 @@ export default function AddFocusPlace() {
           latitude,
           longitude,
           radius,
-          isActive: true, // 새로 만들면 기본 활성화
-          blockedApps: blockedApps, // --- MODIFIED: blockedApps 저장 ---
+          isActive: true,
+          blockedApps: blockedApps,
         };
         places.push(newPlace);
       }
+      
+      // 저장
       await AsyncStorage.setItem("personalFocusPlaces", JSON.stringify(places));
       await clearDraft();
-      Alert.alert("성공", isEditMode ? "수정되었습니다." : "등록되었습니다.", [
-        { text: "확인", onPress: () => router.replace('/(protected)/(tabs)/(focus_zone)') },
-      ]);
+      
+      // 위치 태스크 강제 업데이트
+      console.log('[Add] 🔄 Triggering force update...');
+      await forceLocationTaskUpdate();
+      console.log('[Add] ✅ Force update completed');
+      
+      // ⭐️ [수정] Alert 제거하고 바로 이동
+      router.replace("/(protected)/(tabs)/(focus_zone)"); // ← 또는 router.back()
+      
     } catch (error) {
+      console.error('[Add] ❌ Save error:', error);
       Alert.alert("오류", "저장에 실패했습니다.");
     }
   };
