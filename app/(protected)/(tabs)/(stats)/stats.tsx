@@ -1,17 +1,20 @@
-// [STATS] UPDATED: 통계 화면 (스크롤 가능 + 라이브 타이머 유지)
+// [STATS] FINAL with Month Heatmap
+// - Day: 실시간 총합(HH:mm:ss), 시간별 세로 막대, '진입&이탈' 카드(해당 날짜)
+// - Week: 실시간 총합(HH:mm:ss), 'YYYY.MM N째주' 라벨, 요일 세로 막대(24h=100%)
+// - Month: 실시간 총합(HH:mm:ss), '달력형 히트맵'(0~24h, 1h step, 0h=회색, 24h=진한 초록)
+
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import React, { useEffect, useMemo, useState } from "react";
-import { FlatList, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useMemo, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import type { Granularity } from "../../../../src/features/stats/types";
 import { useStats } from "../../../../src/features/stats/useStats";
 import DatePager from "../../../../src/features/ui/DatePager";
 import PeriodToggle from "../../../../src/features/ui/PeriodToggle";
-// PlaceSelector removed: stats aggregates across all places by default
-import { fmtHm } from "../../../../src/services/lib/time";
+import { toYMD } from "../../../../src/services/lib/time";
 
-/** HH:mm:ss */
+/* ───────── 공통 유틸 ───────── */
 function fmtHms(ms: number) {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(totalSec / 3600);
@@ -21,8 +24,992 @@ function fmtHms(ms: number) {
     s
   ).padStart(2, "0")}`;
 }
+function sameYmd(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+function sameYm(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+}
+function startOfDay(d: Date | number) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x.getTime();
+}
+function startOfHour(date: Date) {
+  const d = new Date(date);
+  d.setMinutes(0, 0, 0);
+  return d.getTime();
+}
+function endOfHour(date: Date) {
+  const d = new Date(date);
+  d.setMinutes(59, 59, 999);
+  return d.getTime();
+}
+function startOfWeekSun(date: Date) {
+  const d = new Date(date);
+  const dow = d.getDay(); // 0=Sun
+  d.setDate(d.getDate() - dow);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function endOfWeekSun(date: Date) {
+  const s = startOfWeekSun(date);
+  const e = new Date(s);
+  e.setDate(e.getDate() + 6);
+  e.setHours(23, 59, 59, 999);
+  return e;
+}
+function sumMergedIntervals(
+  intervals: { start: number; end: number }[],
+  clampStart: number,
+  clampEnd: number
+) {
+  if (!intervals.length) return 0;
+  const clipped = intervals
+    .map(({ start, end }) => {
+      const s = Math.max(start, clampStart);
+      const e = Math.min(end, clampEnd);
+      return e > s ? { start: s, end: e } : null;
+    })
+    .filter(Boolean) as { start: number; end: number }[];
 
-/** 현재 장소에 체류 중이면 진입/지속시간 표시 */
+  if (!clipped.length) return 0;
+
+  clipped.sort((a, b) => a.start - b.start);
+  let curS = clipped[0].start;
+  let curE = clipped[0].end;
+  let total = 0;
+
+  for (let i = 1; i < clipped.length; i++) {
+    const { start, end } = clipped[i];
+    if (start <= curE) curE = Math.max(curE, end);
+    else {
+      total += curE - curS;
+      curS = start;
+      curE = end;
+    }
+  }
+  total += curE - curS;
+  return Math.max(0, total);
+}
+/** anchor + granularity 에 해당하는 기간의 [합집합 총합(ms)]을 1초마다 갱신
+ * - 완료 세션: stats:${userId}:*:${YYYY-MM-DD} 전부 모아 intervals 로 합치기
+ * - 현재 기간이 ‘지금’과 겹치면 진행 중 세션(currentSessions)도 [startedAt ~ now] 로 추가
+ * - 일/주/월 모두 ‘중복 시간은 1번만’ 카운트 (일관성 유지)
+ */
+function useMergedTotalMsForPeriod(
+  userId: string,
+  anchor: Date,
+  granularity: Granularity
+) {
+  const [ms, setMs] = React.useState(0);
+
+  // 기간 경계 계산
+  const range = React.useMemo(() => {
+    if (granularity === "day") {
+      const ymd = toYMD(anchor);
+      const start = new Date(`${ymd}T00:00:00`).getTime();
+      const end = start + 24 * 3600 * 1000 - 1;
+      return {
+        start,
+        end,
+        ymds: [ymd],
+        isCurrent: sameYmd(anchor, new Date()),
+      };
+    }
+    if (granularity === "week") {
+      const s = startOfWeekSun(anchor);
+      const e = endOfWeekSun(anchor);
+      const start = s.getTime();
+      const end = e.getTime();
+      // 주간에 포함되는 일자 ymd 목록
+      const ymds: string[] = [];
+      const d = new Date(start);
+      while (d.getTime() <= end) {
+        ymds.push(toYMD(d));
+        d.setDate(d.getDate() + 1);
+      }
+      const isCurrent =
+        startOfWeekSun(anchor).getTime() ===
+        startOfWeekSun(new Date()).getTime();
+      return { start, end, ymds, isCurrent };
+    }
+    // month
+    const s = startOfMonth(anchor);
+    const e = endOfMonth(anchor);
+    const start = s.getTime();
+    const end = e.getTime();
+    const ymds: string[] = [];
+    const d = new Date(start);
+    while (d.getTime() <= end) {
+      ymds.push(toYMD(d));
+      d.setDate(d.getDate() + 1);
+    }
+    const isCurrent = sameYm(anchor, new Date());
+    return { start, end, ymds, isCurrent };
+  }, [anchor, granularity]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      let mounted = true;
+      let t: any;
+
+      const tick = async () => {
+        try {
+          const { start, end, ymds, isCurrent } = range;
+
+          // 1) 완료 세션 읽기
+          const allKeys = await AsyncStorage.getAllKeys();
+          const statsKeys = allKeys.filter(
+            (k) =>
+              k.startsWith(`stats:${userId}:`) &&
+              ymds.some((ymd) => k.endsWith(`:${ymd}`))
+          );
+
+          const pairs = statsKeys.length
+            ? await AsyncStorage.multiGet(statsKeys)
+            : [];
+
+          const intervals: { start: number; end: number }[] = [];
+          for (const [, raw] of pairs) {
+            if (!raw) continue;
+            try {
+              const rows: { startedAt: number; endedAt: number }[] =
+                JSON.parse(raw) || [];
+              for (const r of rows) {
+                if (r.startedAt && r.endedAt) {
+                  intervals.push({ start: r.startedAt, end: r.endedAt });
+                }
+              }
+            } catch {}
+          }
+
+          // 2) 현재 기간이면 진행 중 세션도 구간 추가
+          if (isCurrent) {
+            const nowTs = Date.now();
+            const curRaw = await AsyncStorage.getItem(
+              `currentSessions:${userId}`
+            );
+            const cur: { placeId: string; startedAt: number }[] = curRaw
+              ? JSON.parse(curRaw)
+              : [];
+            for (const s of cur) {
+              if (!s.startedAt) continue;
+              intervals.push({ start: s.startedAt, end: nowTs });
+            }
+          }
+
+          // 3) 합집합 병합 합계
+          const total = sumMergedIntervals(intervals, start, end);
+          if (mounted) setMs(total);
+        } catch {
+          if (mounted) setMs(0);
+        }
+      };
+
+      tick();
+      t = setInterval(tick, 1000);
+      return () => {
+        mounted = false;
+        clearInterval(t);
+      };
+    }, [userId, range])
+  );
+
+  return ms;
+}
+
+/**
+ * [FIX] 오늘(day) 화면에서 '완료+진행중'을 합집합으로 병합해 총 ms 반환
+ * - 하나를 끄는 순간에도 중복 없이 부드럽게 증가
+ */
+
+/* ───────── Day: 라이브 총합 / 완료합 / 시간별 막대 ───────── */
+function useLiveTodayMs(
+  userId: string,
+  anchor: Date,
+  granularity: Granularity
+) {
+  const [liveMs, setLiveMs] = useState(0);
+  useFocusEffect(
+    React.useCallback(() => {
+      let mounted = true;
+      const tick = async () => {
+        if (!(granularity === "day" && sameYmd(anchor, new Date()))) {
+          if (mounted) setLiveMs(0);
+          return;
+        }
+        try {
+          const raw = await AsyncStorage.getItem(`currentSessions:${userId}`);
+          const sessions: { placeId: string; startedAt: number }[] = raw
+            ? JSON.parse(raw)
+            : [];
+
+          const sod = startOfDay(new Date());
+          const nowTs = Date.now();
+
+          if (!sessions.length) {
+            if (mounted) setLiveMs(0);
+            return;
+          }
+
+          // ✅ 여러 개 켜져 있어도 ‘가장 오래된 startedAt’만 사용해서 1배속 증가
+          const minStarted = Math.min(
+            ...sessions.map((s) => s.startedAt ?? nowTs)
+          );
+          const from = Math.max(minStarted, sod);
+          const to = nowTs;
+          const sum = Math.max(0, to - from);
+
+          if (mounted) setLiveMs(sum);
+        } catch {
+          if (mounted) setLiveMs(0);
+        }
+      };
+      tick();
+      const t = setInterval(tick, 1000);
+      return () => {
+        mounted = false;
+        clearInterval(t);
+      };
+    }, [userId, anchor, granularity])
+  );
+  return liveMs;
+}
+
+function useFinishedTodayMinutesByHour(
+  userId: string,
+  anchor: Date,
+  granularity: Granularity
+) {
+  const [minsByHour, setMinsByHour] = useState<number[]>(new Array(24).fill(0));
+  const hourEnd = (d: Date) => {
+    const x = new Date(d);
+    x.setMinutes(59, 59, 999);
+    return x.getTime();
+  };
+  useFocusEffect(
+    React.useCallback(() => {
+      let mounted = true;
+      const load = async () => {
+        if (!(granularity === "day" && sameYmd(anchor, new Date()))) {
+          if (mounted) setMinsByHour(new Array(24).fill(0));
+          return;
+        }
+        try {
+          const ymd = toYMD(anchor);
+          const keys = (await AsyncStorage.getAllKeys()).filter(
+            (k) => k.startsWith(`stats:${userId}:`) && k.endsWith(`:${ymd}`)
+          );
+          const msByHour = new Array<number>(24).fill(0);
+          if (keys.length) {
+            const pairs = await AsyncStorage.multiGet(keys);
+            const day0 = new Date(`${ymd}T00:00:00`).getTime();
+            const dayEnd = day0 + 24 * 3600 * 1000 - 1;
+            for (const [, raw] of pairs) {
+              if (!raw) continue;
+              let rows: { startedAt: number; endedAt: number }[] = [];
+              try {
+                rows = JSON.parse(raw) || [];
+              } catch {}
+              for (const r of rows) {
+                const s = Math.max(day0, r.startedAt);
+                const e = Math.min(dayEnd, r.endedAt);
+                if (!(e > s)) continue;
+                let cursor = s;
+                while (cursor <= e) {
+                  const h = new Date(cursor).getHours();
+                  const segEnd = Math.min(e, hourEnd(new Date(cursor)));
+                  msByHour[h] += Math.max(0, segEnd - cursor + 1);
+                  cursor = segEnd + 1;
+                }
+              }
+            }
+          }
+          const mins = msByHour.map((v) =>
+            Math.max(0, Math.min(60, Math.floor(v / 60000)))
+          );
+          if (mounted) setMinsByHour(mins);
+        } catch {
+          if (mounted) setMinsByHour(new Array(24).fill(0));
+        }
+      };
+      load();
+      const t = setInterval(load, 1000);
+      return () => {
+        mounted = false;
+        clearInterval(t);
+      };
+    }, [userId, anchor, granularity])
+  );
+  return minsByHour;
+}
+
+function useLiveMinutesForCurrentHour(
+  userId: string,
+  anchor: Date,
+  granularity: Granularity
+) {
+  const [liveMinByHour, setLiveMinByHour] = React.useState<number[]>(
+    new Array(24).fill(0)
+  );
+  const isToday = granularity === "day" && sameYmd(anchor, new Date());
+  useFocusEffect(
+    React.useCallback(() => {
+      let mounted = true;
+      const poll = async () => {
+        if (!isToday) {
+          if (mounted) setLiveMinByHour(new Array(24).fill(0));
+          return;
+        }
+        try {
+          const raw = await AsyncStorage.getItem(`currentSessions:${userId}`);
+          const sessions: { placeId: string; startedAt: number }[] = raw
+            ? JSON.parse(raw)
+            : [];
+          const now = new Date();
+          const idx = now.getHours();
+          const soh = startOfHour(now);
+          const eoh = endOfHour(now);
+          const nowTs = now.getTime();
+          let liveMs = 0;
+          for (const s of sessions) {
+            const st = Math.max(s.startedAt ?? nowTs, soh);
+            const ed = Math.min(nowTs, eoh);
+            liveMs += Math.max(0, ed - st);
+          }
+          const liveMin = Math.min(60, Math.floor(liveMs / 60000));
+          if (mounted) {
+            const arr = new Array(24).fill(0);
+            arr[idx] = liveMin;
+            setLiveMinByHour(arr);
+          }
+        } catch {
+          if (mounted) setLiveMinByHour(new Array(24).fill(0));
+        }
+      };
+      poll();
+      const t = setInterval(poll, 1000);
+      return () => {
+        mounted = false;
+        clearInterval(t);
+      };
+    }, [userId, anchor, granularity, isToday])
+  );
+  return liveMinByHour;
+}
+
+/* ───────── Week: 라이브 총합 ───────── */
+
+// [MONTH][ADD] 이번 달 화면일 때 진행중 세션 실시간 합(ms)
+
+/* ───────── Day 그래프(시간별) ───────── */
+function DayHourBars({ minutesByHour }: { minutesByHour: number[] }) {
+  return (
+    <View style={{ marginTop: 20, alignItems: "center" }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          width: "100%",
+          height: 160,
+        }}
+      >
+        {Array.from({ length: 24 }).map((_, h) => {
+          const min = Math.max(0, Math.min(60, minutesByHour[h] || 0));
+          const pct = (min / 60) * 100;
+          return (
+            <View
+              key={`hour-${h}`}
+              style={{ alignItems: "center", flex: 1, marginHorizontal: 2 }}
+            >
+              <View
+                style={{
+                  width: 10,
+                  height: `${pct}%`,
+                  backgroundColor: "#10B981",
+                  borderRadius: 3,
+                }}
+              />
+              <Text style={{ marginTop: 4, fontSize: 9, color: "#6B7280" }}>
+                {h}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+/* ───────── Week 그래프(요일, 24h=100%) ───────── */
+function WeekBarsKR({ msByDay }: { msByDay: number[] }) {
+  const labels = ["일", "월", "화", "수", "목", "금", "토"];
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  return (
+    <View style={{ marginTop: 16 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          height: 160,
+        }}
+      >
+        {msByDay.map((v, i) => {
+          const clamped = Math.min(DAY_MS, Math.max(0, v || 0));
+          const pct = (clamped / DAY_MS) * 100;
+          return (
+            <View
+              key={`w-${i}`}
+              style={{ alignItems: "center", flex: 1, marginHorizontal: 3 }}
+            >
+              <View
+                style={{
+                  width: 16,
+                  height: `${pct}%`,
+                  backgroundColor: "#10B981",
+                  borderRadius: 4,
+                }}
+              />
+              <Text style={{ marginTop: 6, fontSize: 12, color: "#6B7280" }}>
+                {labels[i]}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+/* ───────── 일 전용: 진입&이탈 카드 + 페이지네이션 ───────── */
+function fmtHHmm(ts: number) {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(
+    d.getMinutes()
+  ).padStart(2, "0")}`;
+}
+function fmtKrDuration(ms: number) {
+  const totalMin = Math.max(0, Math.round(ms / 60000));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h > 0 && m > 0) return `체류 시간 : ${h}시간 ${m}분`;
+  if (h > 0) return `체류 시간 : ${h}시간`;
+  return `체류 시간 : ${m}분`;
+}
+function useDaySessionsLive(
+  userId: string,
+  anchor: Date,
+  granularity: Granularity
+) {
+  const [rows, setRows] = useState<
+    { startedAt: number; endedAt: number; durationMs?: number }[]
+  >([]);
+  useFocusEffect(
+    React.useCallback(() => {
+      let mounted = true;
+      const load = async () => {
+        if (granularity !== "day") {
+          if (mounted) setRows([]);
+          return;
+        }
+        try {
+          const ymd = toYMD(anchor);
+          const allKeys = await AsyncStorage.getAllKeys();
+          const prefix = `stats:${userId}:`;
+          const keys = allKeys.filter(
+            (k) => k.startsWith(prefix) && k.endsWith(`:${ymd}`)
+          );
+          if (!keys.length) {
+            if (mounted) setRows([]);
+            return;
+          }
+          const pairs = await AsyncStorage.multiGet(keys);
+          const out: {
+            startedAt: number;
+            endedAt: number;
+            durationMs?: number;
+          }[] = [];
+          for (const [, raw] of pairs) {
+            if (!raw) continue;
+            try {
+              const arr = JSON.parse(raw) as {
+                startedAt: number;
+                endedAt: number;
+                durationMs?: number;
+              }[];
+              if (Array.isArray(arr)) out.push(...arr);
+            } catch {}
+          }
+          if (mounted) setRows(out);
+        } catch {
+          if (mounted) setRows([]);
+        }
+      };
+      load();
+      const t = setInterval(load, 1000);
+      return () => {
+        mounted = false;
+        clearInterval(t);
+      };
+    }, [userId, anchor, granularity])
+  );
+  return rows;
+}
+function StayCard({
+  startedAt,
+  endedAt,
+  durationMs,
+}: {
+  startedAt: number;
+  endedAt: number;
+  durationMs?: number;
+}) {
+  const dur = durationMs ?? Math.max(0, (endedAt ?? 0) - (startedAt ?? 0));
+  return (
+    <View style={stayStyles.card}>
+      <View style={stayStyles.row}>
+        <View style={stayStyles.dot} />
+        <Text style={stayStyles.mainTime}>
+          {fmtHHmm(startedAt)} <Text style={stayStyles.arrow}>→</Text>{" "}
+          {endedAt ? fmtHHmm(endedAt) : "진행 중"}
+        </Text>
+      </View>
+      <Text style={stayStyles.sub}>{fmtKrDuration(dur)}</Text>
+    </View>
+  );
+}
+function PaginatedStayList({
+  rows,
+  pageSize = 5,
+}: {
+  rows: { startedAt: number; endedAt: number; durationMs?: number }[];
+  pageSize?: number;
+}) {
+  const sorted = useMemo(() => {
+    return [...(rows || [])].sort((a, b) => {
+      const da = (a.endedAt ?? a.startedAt) || 0;
+      const db = (b.endedAt ?? b.startedAt) || 0;
+      return db - da;
+    });
+  }, [rows]);
+  const total = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const [page, setPage] = useState(1);
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return sorted.slice(start, start + pageSize);
+  }, [page, pageSize, sorted]);
+  const goPage = (p: number) => setPage(Math.min(totalPages, Math.max(1, p)));
+  if (!rows || rows.length === 0) {
+    return (
+      <Text style={{ color: "#9CA3AF", marginTop: 6 }}>기록이 없습니다.</Text>
+    );
+  }
+  return (
+    <View style={stayStyles.wrap}>
+      {pageRows.map((r, idx) => (
+        <StayCard
+          key={`${r.startedAt}-${r.endedAt}-${idx}`}
+          startedAt={r.startedAt}
+          endedAt={r.endedAt}
+          durationMs={r.durationMs}
+        />
+      ))}
+      <View style={pagerStyles.container}>
+        <Pressable
+          onPress={() => goPage(page - 1)}
+          disabled={page <= 1}
+          style={[pagerStyles.navBtn, page <= 1 && pagerStyles.navBtnDisabled]}
+        >
+          <Text style={pagerStyles.navLabel}>〈</Text>
+        </Pressable>
+        <View style={pagerStyles.pages}>
+          {Array.from({ length: totalPages }).map((_, i) => {
+            const p = i + 1;
+            const active = p === page;
+            return (
+              <Pressable
+                key={`p-${p}`}
+                onPress={() => goPage(p)}
+                style={[
+                  pagerStyles.pageBtn,
+                  active && pagerStyles.pageBtnActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    pagerStyles.pageLabel,
+                    active && pagerStyles.pageLabelActive,
+                  ]}
+                >
+                  {p}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Pressable
+          onPress={() => goPage(page + 1)}
+          disabled={page >= totalPages}
+          style={[
+            pagerStyles.navBtn,
+            page >= totalPages && pagerStyles.navBtnDisabled,
+          ]}
+        >
+          <Text style={pagerStyles.navLabel}>〉</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/* ───────── [MONTH][ADDED] 달력 히트맵 ───────── */
+
+// 0~24시간(정수) → 색상 팔레트(0=회색, 24=진한 초록)
+const HOUR_COLORS = [
+  "#E5E7EB", // 0h - gray-200
+  "#D1FAE5", // 1h - emerald-100
+  "#BFEFDB", // 2h
+  "#ACE6D1", // 3h
+  "#99DCC7", // 4h
+  "#87D2BD", // 5h
+  "#74C8B3", // 6h
+  "#62BEA9", // 7h
+  "#4FB49F", // 8h
+  "#3DAA95", // 9h
+  "#2AA08B", // 10h
+  "#189681", // 11h
+  "#078C77", // 12h (중간)
+  "#067F6C", // 13h
+  "#067461", // 14h
+  "#066956", // 15h
+  "#065F4C", // 16h
+  "#055542", // 17h
+  "#054B38", // 18h
+  "#04422F", // 19h
+  "#043A27", // 20h
+  "#04321F", // 21h
+  "#032A19", // 22h
+  "#032313", // 23h
+  "#022D1B", // 24h - 가장 진한 초록
+];
+
+// [MONTH][FIXED] 1분이라도 있으면 1단계 색상 이상 적용
+function clampHourColor(hours: number) {
+  // 0시간 이상, 24시간 이하로 제한
+  const capped = Math.max(0, Math.min(24, hours));
+  // 1분이라도 했으면 최소 1단계로 올림
+  const idx = capped === 0 ? 0 : Math.min(24, Math.max(1, Math.ceil(capped))); // ✅ 핵심 변경
+  return HOUR_COLORS[idx];
+}
+
+function MonthCalendar({
+  anchor,
+  monthGrid,
+  liveTodayMsForMonth,
+}: {
+  anchor: Date;
+  monthGrid: { date: string; totalMs: number }[];
+  liveTodayMsForMonth: number;
+}) {
+  // anchor 달의 1일 ~ 말일
+  const year = anchor.getFullYear();
+  const month = anchor.getMonth();
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0); // 말일
+  const firstDayIdx = first.getDay(); // 0=일
+  const totalDays = last.getDate();
+  const todayYmd = toYMD(new Date());
+
+  // date → totalMs (오늘이면 liveTodayMs 더해 반영)
+  const map = new Map<string, number>();
+  for (const d of monthGrid || []) {
+    map.set(d.date, d.totalMs || 0);
+  }
+  if (sameYm(anchor, new Date())) {
+    // 현재 달이면 오늘 칸에 라이브 합산
+    const prev = map.get(todayYmd) || 0;
+    map.set(todayYmd, prev + (liveTodayMsForMonth || 0));
+  }
+
+  // 그리드 생성(일~토 7열, 필요 레코드 수 만큼)
+  const cells: { ymd?: string; num?: number; ms?: number }[] = [];
+  // 앞쪽 공백
+  for (let i = 0; i < firstDayIdx; i++) cells.push({});
+  for (let d = 1; d <= totalDays; d++) {
+    const ymd = `${year}-${String(month + 1).padStart(2, "0")}-${String(
+      d
+    ).padStart(2, "0")}`;
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const ms = Math.min(DAY_MS, map.get(ymd) || 0);
+    cells.push({ ymd, num: d, ms });
+  }
+  // 7의 배수로 채우기(뒤쪽 공백)
+  while (cells.length % 7 !== 0) cells.push({});
+
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+
+  return (
+    <View style={{ marginTop: 12 }}>
+      {/* 요일 헤더 */}
+      <View style={monthStyles.weekHeader}>
+        {["일", "월", "화", "수", "목", "금", "토"].map((w) => (
+          <Text key={w} style={monthStyles.weekHeadTxt}>
+            {w}
+          </Text>
+        ))}
+      </View>
+
+      {/* 주차 그리드 */}
+      {weeks.map((w, wi) => (
+        <View key={`w-${wi}`} style={monthStyles.row}>
+          {w.map((c, ci) => {
+            const isBlank = !c.ymd;
+            const hours = (c.ms || 0) / 3600000;
+            const color = isBlank ? "transparent" : clampHourColor(hours);
+            const isToday = c.ymd === todayYmd;
+            return (
+              <View key={`c-${wi}-${ci}`} style={monthStyles.cell}>
+                <View
+                  style={[
+                    monthStyles.box,
+                    {
+                      backgroundColor: color,
+                      borderColor: isToday ? "#111827" : "#E5E7EB",
+                      borderWidth: isToday ? 2 : StyleSheet.hairlineWidth,
+                    },
+                  ]}
+                >
+                  {/* 날짜 숫자 */}
+                  {!isBlank && (
+                    <Text
+                      style={[
+                        monthStyles.dayNum,
+                        { color: hours > 0 ? "#0B3B2E" : "#6B7280" },
+                      ]}
+                    >
+                      {c.num}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ))}
+
+      {/* 범례
+      <View style={monthStyles.legendRow}>
+        <Text style={monthStyles.legendLabel}>0h</Text>
+        <View style={monthStyles.legendScale}>
+          {Array.from({ length: 25 }).map((_, i) => (
+            <View
+              key={`lg-${i}`}
+              style={{ flex: 1, height: 10, backgroundColor: HOUR_COLORS[i] }}
+            />
+          ))}
+        </View>
+        <Text style={monthStyles.legendLabel}>24h</Text>
+      </View> */}
+    </View>
+  );
+}
+
+// [MONTH][ADD] 월 시작/끝 유틸
+function startOfMonth(d: Date) {
+  const x = new Date(d.getFullYear(), d.getMonth(), 1);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+function endOfMonth(d: Date) {
+  const x = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+/* ───────── 주차 라벨 ───────── */
+const ORD = ["첫째주", "둘째주", "셋째주", "넷째주", "다섯째주"];
+function weekOfMonthLabel(date: Date) {
+  const year = date.getFullYear();
+  const month = date.getMonth(); // 0-11
+  const d1 = new Date(year, month, 1);
+  const firstSun = startOfWeekSun(d1);
+  const thisSun = startOfWeekSun(date);
+  const diff = Math.round((thisSun.getTime() - firstSun.getTime()) / 86400000);
+  const idx = Math.floor(diff / 7); // 0-based
+  return `${year}.${String(month + 1).padStart(2, "0")} ${
+    ORD[Math.min(4, Math.max(0, idx))]
+  }`;
+}
+
+/* ───────── 메인 컴포넌트 ───────── */
+export default function Stats() {
+  const userId = "local";
+  const [placeId] = useState<string | undefined>(undefined);
+  const [granularity, setGranularity] = useState<Granularity>("day");
+  const [anchor, setAnchor] = useState(new Date());
+  const unifiedTotalMs = useMergedTotalMsForPeriod(userId, anchor, granularity);
+  const formattedTotal = fmtHms(unifiedTotalMs);
+
+  const stats = useStats({
+    userId,
+    placeId: "__all__",
+    anchor,
+    granularity,
+  });
+
+  const liveTodayMs = useLiveTodayMs(userId, anchor, granularity);
+  const finishedByHourMinToday = useFinishedTodayMinutesByHour(
+    userId,
+    anchor,
+    granularity
+  );
+
+  const liveMinByHour = useLiveMinutesForCurrentHour(
+    userId,
+    anchor,
+    granularity
+  );
+  const minutesByHour =
+    granularity === "day" && sameYmd(anchor, new Date())
+      ? finishedByHourMinToday.map((m, i) =>
+          Math.min(60, m + (liveMinByHour[i] || 0))
+        )
+      : (stats as any).timeline24
+      ? (stats as any).timeline24.map((ms: number) =>
+          Math.max(0, Math.min(60, Math.floor(ms / 60000)))
+        )
+      : new Array(24).fill(0);
+
+  // [MONTH][ADD] Month
+
+  // Week
+
+  let weekBars: number[] | undefined = (stats as any).weekBars;
+  if (granularity === "week" && weekBars) {
+    weekBars = [...weekBars];
+    const thisWeekStart = startOfWeekSun(anchor).getTime();
+    if (thisWeekStart === startOfWeekSun(new Date()).getTime()) {
+      const todayIdx = new Date().getDay();
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const base = weekBars[todayIdx] || 0; // 완료 누적
+      const extra = Math.min(DAY_MS - Math.min(DAY_MS, base), liveTodayMs || 0); // 24h cap
+      weekBars[todayIdx] = base + Math.max(0, extra);
+    }
+  }
+
+  // [COMMON][MODIFIED] 표시 총합: 일/주/월 각각 라이브 더해주기
+
+  // const formattedTotal = fmtHms(displayTotalMs); // HH:mm:ss
+
+  // Day(오늘): 합집합(merged)로 점프 없이 표시
+  // Week: 완료 합계 + 실시간 주간 라이브
+  // Month: 완료 합계 + 실시간 월간 라이브
+
+  // 헤더 타이틀
+  const title = useMemo(
+    () =>
+      granularity === "day"
+        ? "총 집중 시간"
+        : granularity === "week"
+        ? "주간 총 집중 시간"
+        : "월간 총 집중 시간",
+    [granularity]
+  );
+
+  // 주차 라벨
+  const weekLabel =
+    granularity === "week" ? weekOfMonthLabel(anchor) : undefined;
+
+  // [NAV] 오늘/이번주/이번달 점프 버튼
+  const jumpLabel =
+    granularity === "day"
+      ? "오늘로 가기"
+      : granularity === "week"
+      ? "이번 주로"
+      : "이번 달로";
+  const onJump = () => setAnchor(new Date());
+
+  // [MONTH][ADDED] monthGrid + 오늘 라이브 반영
+  const monthGridRaw: { date: string; totalMs: number }[] =
+    (stats as any).monthGrid || [];
+  const liveTodayMsForMonth = sameYm(anchor, new Date()) ? liveTodayMs : 0; // 현재 달이면 오늘칸 실시간 가산
+
+  const dayRows = useDaySessionsLive(userId, anchor, granularity);
+  return (
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.header}>
+          <PeriodToggle value={granularity} onChange={setGranularity} />
+          <View style={{ height: 8 }} />
+          <DatePager
+            anchor={anchor}
+            granularity={granularity}
+            onChange={setAnchor}
+            onToday={() => setAnchor(new Date())}
+          />
+          <Pressable style={styles.jumpBtn} onPress={onJump}>
+            <Text style={styles.jumpBtnText}>{jumpLabel}</Text>
+          </Pressable>
+          <LiveNowBadge userId={userId} placeId={placeId} />
+        </View>
+
+        {(stats.loading as boolean) ? (
+          <View style={styles.center}>
+            <Text style={{ color: "#6B7280" }}>로딩중</Text>
+          </View>
+        ) : (
+          <View style={styles.body}>
+            <View style={styles.summary}>
+              {granularity === "week" && (
+                <Text style={styles.weekMeta}>{weekLabel}</Text>
+              )}
+              <Text style={styles.summaryTitle}>{title}</Text>
+              <Text style={styles.summaryValue}>{formattedTotal}</Text>
+            </View>
+
+            {/* Day 그래프 */}
+            {granularity === "day" && (
+              <DayHourBars minutesByHour={minutesByHour} />
+            )}
+
+            {/* Week 그래프 */}
+            {granularity === "week" && weekBars && (
+              <WeekBarsKR msByDay={weekBars} />
+            )}
+
+            {/* [MONTH][ADDED] 월 달력 히트맵 */}
+            {granularity === "month" && (
+              <MonthCalendar
+                anchor={anchor}
+                monthGrid={monthGridRaw}
+                liveTodayMsForMonth={liveTodayMsForMonth}
+              />
+            )}
+
+            {/* Day에서만 '진입 & 이탈 시간' */}
+            {granularity === "day" && (
+              <View style={{ marginTop: 12 }}>
+                <Text style={styles.sectionTitle}>진입 & 이탈 시간</Text>
+                <PaginatedStayList rows={dayRows} />
+              </View>
+            )}
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+/* ───────── 현재 체류 배지 ───────── */
 function LiveNowBadge({
   userId,
   placeId,
@@ -40,11 +1027,11 @@ function LiveNowBadge({
         return;
       }
       const raw = await AsyncStorage.getItem(`currentSessions:${userId}`);
-      const rows: { placeId: string; startedAt: number }[] = raw
+      const sessions: { placeId: string; startedAt: number }[] = raw
         ? JSON.parse(raw)
         : [];
-      const row = rows?.find((r) => r.placeId === placeId);
-      setStartedAt(row ? row.startedAt : null);
+      const found = sessions.find((s) => s.placeId === placeId);
+      setStartedAt(found?.startedAt ?? null);
     } catch {
       setStartedAt(null);
     }
@@ -52,269 +1039,80 @@ function LiveNowBadge({
 
   useFocusEffect(
     React.useCallback(() => {
+      let t: any;
       load();
-      return () => {};
-    }, [placeId])
+      t = setInterval(() => setNow(Date.now()), 1000);
+      return () => clearInterval(t);
+    }, [placeId, userId])
   );
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
 
   if (!placeId || !startedAt) return null;
 
-  const enter = new Date(startedAt);
-  const hh = String(enter.getHours()).padStart(2, "0");
-  const mm = String(enter.getMinutes()).padStart(2, "0");
-  const dur = now - startedAt;
+  const elapsed = Math.max(0, now - startedAt);
 
   return (
-    <View style={styles.liveWrap}>
+    <View style={styles.livePill}>
       <View style={styles.liveDot} />
-      <Text style={styles.liveTitle}>
-        진입 {hh}:{mm}
-      </Text>
-      <View style={{ width: 8 }} />
-      <Text style={styles.liveTimer}>{fmtHms(dur)}</Text>
+      <Text style={styles.liveTitle}>진행 중</Text>
+      <Text style={{ width: 6 }} />
+      <Text style={styles.liveTimer}>{fmtHms(elapsed)}</Text>
     </View>
   );
 }
 
-export default function Stats() {
-  const userId = "local";
-
-  const [placeId] = useState<string | undefined>(undefined);
-  const [granularity, setGranularity] = useState<Granularity>("day");
-  const [anchor, setAnchor] = useState(new Date());
-
-  const stats = useStats({
-    userId,
-    placeId: "__all__",
-    anchor,
-    granularity,
-  });
-
-  const title = useMemo(
-    () =>
-      granularity === "day"
-        ? "총 집중 시간"
-        : granularity === "week"
-        ? "주간 총 집중"
-        : "월간 총 집중",
-    [granularity]
-  );
-
-  return (
-    <View style={styles.container}>
-      {/* [STATS] 수정됨: 전체를 ScrollView로 감싸서 세션 로그가 길어도 스크롤 가능 */}
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <PeriodToggle value={granularity} onChange={setGranularity} />
-          <View style={{ height: 8 }} />
-          <DatePager
-            anchor={anchor}
-            granularity={granularity}
-            onChange={setAnchor}
-            onToday={() => setAnchor(new Date())}
-          />
-          {/* 실시간 배지 + 저장 확인 */}
-          <LiveNowBadge userId={userId} placeId={placeId} />
-        </View>
-
-        {stats.loading ? (
-          <View style={styles.center}>
-            <Text style={{ color: "#6B7280" }}>집중장소를 선택하세요.</Text>
-          </View>
-        ) : (
-          <View style={styles.body}>
-            <View style={styles.summary}>
-              <Text style={styles.summaryTitle}>{title}</Text>
-              <Text style={styles.summaryValue}>{fmtHm(stats.totalMs)}</Text>
-              {granularity === "week" &&
-                stats.activeDaysCount !== undefined && (
-                  <Text style={styles.sub}>
-                    참가일 {stats.activeDaysCount} / 7일
-                  </Text>
-                )}
-            </View>
-
-            {granularity === "day" && stats.timeline24 && (
-              <DayTimeline hours={stats.timeline24} />
-            )}
-            {granularity === "week" && stats.weekBars && (
-              <WeekBars values={stats.weekBars} />
-            )}
-            {granularity === "month" && stats.monthGrid && (
-              <MonthGrid days={stats.monthGrid} />
-            )}
-
-            <View style={{ marginTop: 12 }}>
-              <Text style={styles.sectionTitle}>진입 & 이탈 시간</Text>
-              <FlatList
-                data={stats.sessions.sort((a, b) => a.startedAt - b.startedAt)}
-                keyExtractor={(it) => it.id}
-                renderItem={({ item }) => (
-                  <View style={styles.sessionRow}>
-                    <Text style={styles.sessionText}>
-                      {toHm(item.startedAt)} ~ {toHm(item.endedAt)}
-                    </Text>
-                    <Text style={[styles.sessionText, { color: "#2563EB" }]}>
-                      {fmtHm(item.durationMs)}
-                    </Text>
-                  </View>
-                )}
-                // [STATS] 수정됨: 스크롤은 상위 ScrollView가 담당 → 내부 리스트 스크롤 끔
-                scrollEnabled={false}
-                ListEmptyComponent={
-                  <Text style={{ color: "#9CA3AF", marginTop: 6 }}>
-                    기록이 없습니다.
-                  </Text>
-                }
-              />
-            </View>
-          </View>
-        )}
-      </ScrollView>
-    </View>
-  );
-}
-
-/* 간단 시각화 */
-function DayTimeline({ hours }: { hours: number[] }) {
-  const max = Math.max(1, ...hours);
-  return (
-    <View style={{ marginTop: 8 }}>
-      <Text style={styles.sectionTitle}>체류 타임라인</Text>
-      <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
-        {hours.map((v, i) => (
-          <View key={i} style={{ alignItems: "center", flex: 1 }}>
-            <View
-              style={{
-                height: Math.max(2, (80 * v) / max),
-                width: "70%",
-                backgroundColor: "#22C55E",
-                borderRadius: 4,
-              }}
-            />
-            {i % 3 === 0 && (
-              <Text style={{ fontSize: 10, color: "#6B7280" }}>{i}</Text>
-            )}
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-function WeekBars({ values }: { values: number[] }) {
-  const labels = ["일", "월", "화", "수", "목", "금", "토"];
-  const max = Math.max(1, ...values);
-  return (
-    <View style={{ marginTop: 8 }}>
-      <Text style={styles.sectionTitle}>요일별 집중</Text>
-      <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
-        {values.map((v, i) => (
-          <View key={i} style={{ alignItems: "center", flex: 1 }}>
-            <View
-              style={{
-                height: Math.max(2, (80 * v) / max),
-                width: "60%",
-                backgroundColor: "#22C55E",
-                borderRadius: 4,
-              }}
-            />
-            <Text style={{ fontSize: 12, color: "#6B7280" }}>{labels[i]}</Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-function MonthGrid({ days }: { days: { date: string; totalMs: number }[] }) {
-  const max = Math.max(1, ...days.map((d) => d.totalMs));
-  return (
-    <View style={{ marginTop: 8 }}>
-      <Text style={styles.sectionTitle}>달력</Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-        {days.map((d) => (
-          <View key={d.date} style={styles.dayCell}>
-            <View
-              style={{
-                flex: 1,
-                width: "100%",
-                backgroundColor: `rgba(34,197,94,${
-                  max > 0 ? 0.15 + 0.85 * (d.totalMs / max) : 0.15
-                })`,
-                borderRadius: 8,
-              }}
-            />
-            <Text style={styles.dayLabel}>{Number(d.date.split("-")[2])}</Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-/* 유틸 */
-function toHm(ms: number) {
-  const d = new Date(ms);
-  const h = String(d.getHours()).padStart(2, "0");
-  const m = String(d.getMinutes()).padStart(2, "0");
-  return `${h}:${m}`;
-}
-
+/* ───────── Styles ───────── */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F9FAFB" },
-  // [STATS] 수정됨: ScrollView 안쪽 여백/하단 패딩
-  scrollContent: { paddingBottom: 40 }, // [STATS] 수정됨
-  header: { padding: 16, marginTop: 16 },
-  body: { paddingHorizontal: 16, paddingBottom: 16 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  summary: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#EEF2F7",
+  container: { flex: 1, backgroundColor: "white", marginTop: 15 },
+  scrollContent: { padding: 16, paddingBottom: 40 },
+  header: { marginBottom: 8 },
+  center: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
   },
-  summaryTitle: { fontSize: 14, color: "#6B7280" },
-  summaryValue: { fontSize: 28, fontWeight: "800", marginTop: 4 },
-  sub: { marginTop: 4, color: "#2563EB", fontWeight: "700" },
-  sectionTitle: {
-    marginTop: 10,
-    marginBottom: 6,
+  body: {},
+  jumpBtn: {
+    alignSelf: "center",
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: "#111827",
+  },
+  jumpBtnText: {
+    color: "white",
+    fontSize: 12,
     fontWeight: "700",
-    color: "#111827",
   },
-  sessionRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#E5E7EB",
+  summary: {
+    backgroundColor: "#F9FAFB",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#E5E7EB",
   },
-  sessionText: { fontSize: 14, color: "#111827" },
-  dayCell: { width: `${100 / 7}%`, aspectRatio: 1, padding: 4 },
-  dayLabel: {
-    position: "absolute",
-    top: 6,
-    left: 8,
-    fontSize: 10,
-    color: "#111827",
+  weekMeta: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 4,
   },
-
-  // 실시간 배지
-  liveWrap: {
-    marginTop: 10,
+  summaryTitle: { fontSize: 14, color: "#6B7280", marginBottom: 6 },
+  summaryValue: { fontSize: 28, fontWeight: "bold", color: "#111827" },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  livePill: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    backgroundColor: "#F0FDF4",
-    borderWidth: 1,
-    borderColor: "#BBF7D0",
+    backgroundColor: "#D1FAE5",
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 10,
+    marginTop: 8,
   },
   liveDot: {
     width: 8,
@@ -325,4 +1123,150 @@ const styles = StyleSheet.create({
   },
   liveTitle: { fontSize: 12, color: "#065F46", fontWeight: "700" },
   liveTimer: { fontSize: 12, color: "#065F46", fontWeight: "700" },
+});
+
+const stayStyles = StyleSheet.create({
+  wrap: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
+  },
+  card: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  row: { flexDirection: "row", alignItems: "center" },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
+    backgroundColor: "#10B981",
+  },
+  mainTime: {
+    fontSize: 16,
+    color: "#111827",
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+  },
+  arrow: { color: "#6B7280" },
+  sub: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#6B7280",
+    fontVariant: ["tabular-nums"],
+  },
+});
+
+const pagerStyles = StyleSheet.create({
+  container: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8 as any,
+  },
+  pages: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6 as any,
+    marginHorizontal: 6,
+  },
+  pageBtn: {
+    minWidth: 28,
+    height: 28,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  pageBtnActive: {
+    backgroundColor: "#111827",
+    borderColor: "#111827",
+  },
+  pageLabel: {
+    fontSize: 12,
+    color: "#374151",
+  },
+  pageLabelActive: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  navBtn: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  navBtnDisabled: {
+    opacity: 0.4,
+  },
+  navLabel: {
+    fontSize: 12,
+    color: "#374151",
+  },
+});
+
+const monthStyles = StyleSheet.create({
+  weekHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 2,
+    marginBottom: 6,
+  },
+  weekHeadTxt: {
+    width: `${100 / 7}%`,
+    textAlign: "center",
+    fontSize: 12,
+    color: "#6B7280",
+  },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  cell: {
+    width: `${100 / 7}%`,
+    paddingHorizontal: 2,
+  },
+  box: {
+    aspectRatio: 1, // 정사각형
+    borderRadius: 10,
+    alignItems: "flex-start",
+    justifyContent: "flex-start",
+    padding: 6,
+    backgroundColor: "#E5E7EB",
+  },
+  dayNum: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  legendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  legendLabel: { fontSize: 10, color: "#6B7280", marginHorizontal: 6 },
+  legendScale: {
+    flex: 1,
+    flexDirection: "row",
+    height: 10,
+    borderRadius: 6,
+    overflow: "hidden",
+  },
 });

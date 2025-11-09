@@ -3,12 +3,36 @@ import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { Granularity } from "../../features/stats/types";
 
+const ORD = ["첫째주", "둘째주", "셋째주", "넷째주", "다섯째주"];
+
+function startOfWeekSun(date: Date) {
+  const d = new Date(date);
+  const dow = d.getDay(); // 0=일
+  d.setDate(d.getDate() - dow);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function weekOfMonthLabel(date: Date) {
+  const year = date.getFullYear();
+  const month = date.getMonth(); // 0~11
+  const firstOfMonth = new Date(year, month, 1);
+  const firstWeekStart = startOfWeekSun(firstOfMonth); // 해당 달 '첫 일요일'이 포함된 주 시작
+  const thisWeekStart = startOfWeekSun(date);
+  const diffDays =
+    (thisWeekStart.getTime() - firstWeekStart.getTime()) /
+    (1000 * 60 * 60 * 24);
+  const idx = Math.floor(diffDays / 7); // 0-based
+  const ord = ORD[Math.min(ORD.length - 1, Math.max(0, idx))];
+  return `${year}.${String(month + 1).padStart(2, "0")} ${ord}`;
+}
+
 function formatTitle(d: Date, g: Granularity) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   if (g === "day") return `${y}.${m}.${dd}`;
-  if (g === "week") return `${y}.${m} 주간`;
+  if (g === "week") return weekOfMonthLabel(d); // ✅ 주간은 'YYYY.MM N째주'
   return `${y}.${m}`;
 }
 

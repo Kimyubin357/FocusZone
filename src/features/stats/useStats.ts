@@ -1,5 +1,8 @@
 // [STATS] NEW FILE: src/features/stats/useStats.ts
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  default as AsyncStorage,
+  default as AsyncStorageLib,
+} from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useState } from "react";
 import {
   addDays,
@@ -8,7 +11,6 @@ import {
   toYMD,
 } from "../../services/lib/time"; // 경로 주의
 import type { SessionRow, UseStatsParams, UseStatsResult } from "./types";
-import AsyncStorageLib from "@react-native-async-storage/async-storage";
 
 // 내부 키 포맷 상수
 // - 진행중 세션 목록: currentSessions:${userId} => [{placeId, startedAt}]
@@ -24,20 +26,65 @@ async function loadDaySessions(userId: string, placeId: string, date: Date) {
   return rows;
 }
 
+// async function getAllPlaceIds(): Promise<string[]> {
+//   try {
+//     const rawFocus = await AsyncStorageLib.getItem("focusPlaces");
+//     const rawLegacy = await AsyncStorageLib.getItem("places");
+//     let arr: any[] = [];
+//     if (rawFocus) {
+//       const parsed = JSON.parse(rawFocus) as any[];
+//       arr = (parsed || []).map((p) => p.id ?? p.placeId ?? String(p.name ?? p.address ?? "unknown"));
+//     } else if (rawLegacy) {
+//       const parsed = JSON.parse(rawLegacy) as any[];
+//       arr = (parsed || []).map((p) => p.id ?? String(p.name ?? "unknown"));
+//     }
+//     const ids = (arr || []).map((v) => String(v)).filter(Boolean);
+//     // unique
+//     return Array.from(new Set(ids));
+//   } catch {
+//     return [];
+//   }
+// }
 async function getAllPlaceIds(): Promise<string[]> {
   try {
-    const rawFocus = await AsyncStorageLib.getItem("focusPlaces");
-    const rawLegacy = await AsyncStorageLib.getItem("places");
-    let arr: any[] = [];
-    if (rawFocus) {
-      const parsed = JSON.parse(rawFocus) as any[];
-      arr = (parsed || []).map((p) => p.id ?? p.placeId ?? String(p.name ?? p.address ?? "unknown"));
-    } else if (rawLegacy) {
-      const parsed = JSON.parse(rawLegacy) as any[];
-      arr = (parsed || []).map((p) => p.id ?? String(p.name ?? "unknown"));
-    }
-    const ids = (arr || []).map((v) => String(v)).filter(Boolean);
-    // unique
+    // 현재 앱에서 쓰는 키
+    const rawPersonal = await AsyncStorageLib.getItem("personalFocusPlaces");
+    const rawGroup = await AsyncStorageLib.getItem("groupfocusPlaces");
+
+    // 레거시 키(혹시 남아있는 경우 대비)
+    const rawFocusLegacy = await AsyncStorageLib.getItem("focusPlaces");
+    const rawLegacyPlaces = await AsyncStorageLib.getItem("places");
+
+    const parseArr = (raw?: string | null) => {
+      if (!raw) return [] as any[];
+      try {
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) ? arr : [];
+      } catch {
+        return [];
+      }
+    };
+
+    const personal = parseArr(rawPersonal);
+    const group = parseArr(rawGroup);
+    const legacy1 = parseArr(rawFocusLegacy);
+    const legacy2 = parseArr(rawLegacyPlaces);
+
+    const ids = [
+      ...personal.map((p: any) => p?.id).filter(Boolean),
+      ...group.map((p: any) => p?.id).filter(Boolean),
+      // 레거시 안전 처리
+      ...legacy1
+        .map(
+          (p: any) =>
+            p?.id ?? p?.placeId ?? String(p?.name ?? p?.address ?? "unknown")
+        )
+        .filter(Boolean),
+      ...legacy2
+        .map((p: any) => p?.id ?? String(p?.name ?? "unknown"))
+        .filter(Boolean),
+    ].map(String);
+
     return Array.from(new Set(ids));
   } catch {
     return [];
@@ -104,7 +151,11 @@ export function useStats(params: UseStatsParams): UseStatsResult {
             const nextMonth = new Date(start);
             nextMonth.setMonth(start.getMonth() + 1);
             const rows: SessionRow[] = [];
-            for (let d = new Date(start); d < nextMonth; d.setDate(d.getDate() + 1)) {
+            for (
+              let d = new Date(start);
+              d < nextMonth;
+              d.setDate(d.getDate() + 1)
+            ) {
               const r = await loadDaySessions(userId, pid, d);
               rows.push(...r);
             }
