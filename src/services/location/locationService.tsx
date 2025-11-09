@@ -3,7 +3,19 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { Alert, NativeModules } from "react-native";
-
+//노윤석 추가코드
+import {
+  arrayUnion,
+  doc,
+  getDoc,
+  increment,
+  runTransaction,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
+import { auth, db } from "../../../firebaseConfig";
+//노윤석 끝
 // 네이티브 모듈 및 상수 정의
 const { BlockedApps } = NativeModules;
 const LOCATION_TASK_NAME = "background-location-task";
@@ -32,22 +44,112 @@ type FinishedSession = {
   endedAt: number;
   durationMs: number;
 };
+
+//노윤석 추가코드
+/** 현재 placeId가 "그룹장소"인지 AsyncStorage 캐시로 판별 */
+const isGroupPlace = async (placeId: string) => {
+  try {
+    const raw = await AsyncStorage.getItem(GROUP_PLACES_KEY);
+    if (!raw) return false;
+    const arr: any[] = JSON.parse(raw);
+    return Array.isArray(arr) && arr.some((p) => p?.id === placeId);
+  } catch {
+    return false;
+  }
+};
+
+/** Firestore: days/{YYYY-MM-DD} 문서를 존재 보장(enter시), interval 추가/합계 누적(exit시) */
+const upsertGroupDayDocOnEnter = async ({
+  placeId,
+  uid,
+  startedAt,
+}: {
+  placeId: string;
+  uid: string;
+  startedAt: number;
+}) => {
+  const ymd = toYMD(new Date(startedAt));
+  const dayRef = doc(
+    db,
+    "groupLocations",
+    placeId,
+    "memberStats",
+    uid,
+    "days",
+    ymd
+  );
+  const snap = await getDoc(dayRef);
+  if (!snap.exists()) {
+    await setDoc(dayRef, {
+      totalMs: 0,
+      intervals: [],
+      updatedAt: serverTimestamp(),
+    });
+  } else {
+    await updateDoc(dayRef, { updatedAt: serverTimestamp() });
+  }
+};
+
+const upsertGroupDayDocOnExit = async ({
+  placeId,
+  uid,
+  startedAt,
+  endedAt,
+}: {
+  placeId: string;
+  uid: string;
+  startedAt: number;
+  endedAt: number;
+}) => {
+  const ymd = toYMD(new Date(startedAt));
+  const dayRef = doc(
+    db,
+    "groupLocations",
+    placeId,
+    "memberStats",
+    uid,
+    "days",
+    ymd
+  );
+
+  const durationMs = Math.max(0, endedAt - startedAt);
+
+  // 트랜잭션: totalMs 누적 + intervals append + updatedAt 갱신
+  await runTransaction(db, async (tx) => {
+    const cur = await tx.get(dayRef);
+    if (!cur.exists()) {
+      tx.set(dayRef, {
+        totalMs: durationMs,
+        intervals: [{ startedAt, endedAt, durationMs }],
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      // arrayUnion을 쓰면 중복 방지에도 유리(동일 객체일 때)
+      tx.update(dayRef, {
+        totalMs: increment(durationMs),
+        intervals: arrayUnion({ startedAt, endedAt, durationMs }),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  });
+};
+//노윤석 끝
 function toYMD(date: Date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
-export async function statsLogEnter(
-  {
-    userId = "local",
-    placeId,
-    startedAt = Date.now(),
-  }: {
-    userId?: string;
-    placeId: string;
-    startedAt?: number;
-  }) {
+
+export async function statsLogEnter({
+  userId = "local",
+  placeId,
+  startedAt = Date.now(),
+}: {
+  userId?: string;
+  placeId: string;
+  startedAt?: number;
+}) {
   try {
     const key = STATS_CUR_KEY(userId);
     const raw = await AsyncStorage.getItem(key);
@@ -56,20 +158,26 @@ export async function statsLogEnter(
       cur.push({ placeId, startedAt });
       await AsyncStorage.setItem(key, JSON.stringify(cur));
     }
+    //노윤석 추가코드
+    // 그룹장소면 Firestore에도 '해당 일자 문서' 존재 보장(인터벌은 exit에서 추가)
+    const authedUid = auth?.currentUser?.uid ?? userId;
+    if (authedUid && authedUid !== "local" && (await isGroupPlace(placeId))) {
+      await upsertGroupDayDocOnEnter({ placeId, uid: authedUid, startedAt });
+    }
+    //노윤석 끝
   } catch (e) {
     console.log("[STATS] logEnter error", e);
   }
 }
-export async function statsLogExit(
-  {
-    userId = "local",
-    placeId,
-    endedAt = Date.now(),
-  }: {
-    userId?: string;
-    placeId: string;
-    endedAt?: number;
-  }) {
+export async function statsLogExit({
+  userId = "local",
+  placeId,
+  endedAt = Date.now(),
+}: {
+  userId?: string;
+  placeId: string;
+  endedAt?: number;
+}) {
   try {
     const curKey = STATS_CUR_KEY(userId);
     const raw = await AsyncStorage.getItem(curKey);
@@ -93,6 +201,19 @@ export async function statsLogExit(
       durationMs,
     });
     await AsyncStorage.setItem(dayKey, JSON.stringify(day));
+
+    //노윤석 추가코드
+    // 그룹장소면 Firestore에도 동일 인터벌 추가 + totalMs 누적
+    const authedUid = auth?.currentUser?.uid ?? userId;
+    if (authedUid && authedUid !== "local" && (await isGroupPlace(placeId))) {
+      await upsertGroupDayDocOnExit({
+        placeId,
+        uid: authedUid,
+        startedAt,
+        endedAt,
+      });
+    }
+    //노윤석 끝
   } catch (e) {
     console.log("[STATS] logExit error", e);
   }
@@ -147,7 +268,7 @@ const processLocationUpdate = async (currentLocation: any) => {
   try {
     // 2a. 동기화 상태 플래그 확인
     const groupSyncStatus = await AsyncStorage.getItem(GROUP_SYNC_STATUS_KEY);
-    const isGroupDataSynced = groupSyncStatus === 'SYNCED';
+    const isGroupDataSynced = groupSyncStatus === "SYNCED";
 
     // 2b. [핵심 수정] 개인 장소 로드 (안전하게 파싱)
     const personalPlacesRaw = await AsyncStorage.getItem(PERSONAL_PLACES_KEY);
@@ -177,7 +298,9 @@ const processLocationUpdate = async (currentLocation: any) => {
         console.error("Failed to parse GROUP_PLACES_KEY:", parseError);
       }
     } else if (!isGroupDataSynced && groupPlacesRaw) {
-      console.log('[Location Task] 네트워크 오프라인. 저장된 그룹 장소를 무시합니다.');
+      console.log(
+        "[Location Task] 네트워크 오프라인. 저장된 그룹 장소를 무시합니다."
+      );
     }
 
     // 2d. [완성] 정제/변환된 두 목록을 하나로 합침
@@ -187,7 +310,8 @@ const processLocationUpdate = async (currentLocation: any) => {
     if (places.length === 0) {
       const lastLockStateRaw = await AsyncStorage.getItem(LOCK_STATE_KEY);
       if (lastLockStateRaw) {
-        const lastLockState: { state?: "LOCKED" | "UNLOCKED" } = JSON.parse(lastLockStateRaw);
+        const lastLockState: { state?: "LOCKED" | "UNLOCKED" } =
+          JSON.parse(lastLockStateRaw);
         if (lastLockState.state === "LOCKED") {
           console.log("[Location Task] No active places found. Unlocking.");
           await BlockedApps.setBlockedApps([]);
@@ -277,10 +401,10 @@ const processLocationUpdate = async (currentLocation: any) => {
         insidePlaceIds
       );
       console.log(
-        '[Location Debug] setBlockedApps 호출 준비:',
+        "[Location Debug] setBlockedApps 호출 준비:",
         isInsideAnyZone,
         appsToBlock.length,
-        '개 앱'
+        "개 앱"
       );
       await BlockedApps.setBlockedApps(isInsideAnyZone ? appsToBlock : []);
       await AsyncStorage.setItem(
@@ -300,7 +424,7 @@ const processLocationUpdate = async (currentLocation: any) => {
 // ⭐️ [추가] 강제 업데이트 함수 (export)
 export const forceLocationTaskUpdate = async () => {
   console.log("[forceLocationTaskUpdate] 🔄 Force update triggered");
-  
+
   try {
     // 현재 위치 가져오기
     const location = await Location.getCurrentPositionAsync({
@@ -315,7 +439,7 @@ export const forceLocationTaskUpdate = async () => {
 
     // 백그라운드 태스크와 동일한 로직 실행
     await processLocationUpdate(location);
-    
+
     console.log("[forceLocationTaskUpdate] ✅ Update completed");
   } catch (e) {
     console.error("[forceLocationTaskUpdate] ❌ Error:", e);
@@ -333,7 +457,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
   if (data) {
     const { locations } = data as any;
     const currentLocation = locations[0];
-    
+
     console.log("[Location Task] 📍 Background update triggered");
     await processLocationUpdate(currentLocation);
   }
