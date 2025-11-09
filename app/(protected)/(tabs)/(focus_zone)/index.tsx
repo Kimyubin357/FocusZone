@@ -353,16 +353,16 @@ export default function FocusZoneScreen() {
             }
           />
         ))}
+
       </MapView>
 
+      {/* ⭐️ [수정] map.tsx와 동일한 현재 위치 버튼 */}
       <TouchableOpacity
         style={styles.locationButton}
         onPress={getCurrentLocation}
         activeOpacity={0.8}
       >
-        <View style={styles.locationButtonInner}>
-          <Ionicons name="navigate" size={22} color="#fff" />
-        </View>
+        <Ionicons name="navigate-outline" size={22} color="#000" />
       </TouchableOpacity>
 
       <BottomSheet
@@ -454,30 +454,22 @@ export default function FocusZoneScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
+  // ⭐️ [수정] map.tsx와 동일한 스타일
   locationButton: {
     position: "absolute",
-    top: 16,
+    top: 40, // 검색바 아래 위치
     right: 16,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 46,
+    height: 46,
     backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
+    borderRadius: 23,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     zIndex: 1000,
-  },
-  locationButtonInner: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#2563EB",
-    justifyContent: "center",
-    alignItems: "center",
   },
 
   bottomSheet: {
