@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { NativeModules } from 'react-native';
 import { auth, db } from '../../../firebaseConfig';
+import { forceLocationTaskUpdate } from './locationService';
 
 // 네이티브 모듈에서 가져올 앱 정보 타입
 type InstalledApp = {
@@ -173,6 +174,10 @@ const setupFirestoreListener = (user: User) => {
                 console.log(
                     `[Sync Service] ${translatedPlaces.length}개의 장소를 AsyncStorage에 동기화했습니다. (상태: SYNCED)`
                 );
+                
+                // ✅ [수정 2] 동기화 직후, locationService에 즉시 재검사를 강제합니다.
+                console.log('[Sync Service] locationService에 즉시 재검사 신호 전송...');
+                await forceLocationTaskUpdate();
 
             } catch (error) {
                 console.error('[Sync Service] 동기화 중 심각한 오류 발생:', error);
