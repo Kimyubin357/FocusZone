@@ -1,3 +1,7 @@
+// app/(protected)/(tabs)/(group_zone)/add.tsx — Minimal theming (preserve all UI/logic)
+
+
+
 import { Ionicons } from "@expo/vector-icons";
 
 // ⭐️ 1. [추가] useFocusEffect, useIsFocused, useCallback 임포트
@@ -145,9 +149,9 @@ export default function AddGroupPlace() {
 
   );
 
-  const [radius, setRadius] = useState<number>(
+  const [radius, setRadius] = useState<number | undefined>(
 
-    params.radius ? Number(params.radius) : 400
+    params.radius ? Number(params.radius) : undefined
 
   );
 
@@ -252,7 +256,7 @@ export default function AddGroupPlace() {
               ? Number(params.radius)
               : typeof data.radius === "number"
                 ? data.radius
-                : 400
+                : undefined
           );
           setactiveDays(
             params.activeDays
@@ -293,7 +297,7 @@ export default function AddGroupPlace() {
         // 1. useState가 이미 params.updatedCategories로 상태를 설정했음
 
         // 2. 파라미터를 "사용완료" 처리 (중복 실행 방지)
-        //     -> updatedCategories를 currentCategories로 "백업"
+        //    -> updatedCategories를 currentCategories로 "백업"
         router.setParams({
           updatedCategories: undefined,
           currentCategories: params.updatedCategories,
@@ -319,6 +323,9 @@ export default function AddGroupPlace() {
 
       return Alert.alert("안내", "주소를 선택해 주세요.");
 
+    if (!radius || radius <= 0) {
+      return Alert.alert("안내", "지도에서 반지름을 설정해 주세요.");
+    }
 
 
     setSaving(true);
@@ -341,7 +348,7 @@ export default function AddGroupPlace() {
 
           longitude: longitude ?? null,
 
-          radius: Number(radius) || 400,
+          radius: Number(radius),
 
           activeDays: activeDays.sort((a, b) => a - b),
 
@@ -421,16 +428,13 @@ export default function AddGroupPlace() {
 
           longitude: longitude ?? null,
 
-          radius: Number(radius) || 400,
+          radius: Number(radius) ,
 
           activeDays: activeDays.sort((a, b) => a - b),
 
           // [수정] creatorId -> ownerId
 
           ownerId: user.uid,
-          
-          // [수정] 1. memberIds 배열 추가 (비정규화)
-          memberIds: [user.uid],
 
           inviteCode: inviteCode,
 
@@ -454,10 +458,11 @@ export default function AddGroupPlace() {
 
 
         // 5. 'members' 서브 컬렉션에 그룹장 정보 저장
-        
-        // [수정] 2. members 서브 컬렉션의 문서 ID를 user.uid로 지정
+
         const memberRef = doc(
-          db, "groupLocations", newGroupRef.id, "members", user.uid
+
+          collection(db, "groupLocations", newGroupRef.id, "members")
+
         );
 
         // (선택) user 프로필에서 displayName 가져오기
@@ -538,7 +543,7 @@ export default function AddGroupPlace() {
 
       name: groupName,
 
-      radius: radius.toString(),
+      radius: radius?.toString(),
 
       address: address,
 
@@ -606,7 +611,7 @@ export default function AddGroupPlace() {
 
         longitude: longitude?.toString() ?? "",
 
-        radius: radius.toString(),
+        radius: radius?.toString() ?? "",
 
         activeDays: JSON.stringify(activeDays),
 
@@ -808,9 +813,8 @@ export default function AddGroupPlace() {
 
             <Text style={[styles.label, { color: colors.muted }]}>반지름</Text>
 
-            <Text style={[styles.rowBtnText, { color: colors.text }]}>
-
-              {radius}m
+            <Text style={[styles.rowBtnText, { color: radius ? colors.text : colors.muted }]}>
+              {radius ? `${radius}m` : "지도에서 설정하세요"}
 
             </Text>
 

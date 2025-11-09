@@ -9,6 +9,10 @@ import android.graphics.drawable.Drawable
 import android.util.Base64
 import com.facebook.react.bridge.*
 import java.io.ByteArrayOutputStream
+import android.provider.Settings
+import android.text.TextUtils
+import android.content.Intent
+import com.focuszone.lock.AppLockService
 
 object BlockedAppsHolder {
     var blockedApps: List<String> = emptyList() // 차단 앱 패키지명 저장 리스트
@@ -103,6 +107,58 @@ class BlockedAppsModule(reactContext: ReactApplicationContext) :
             promise.resolve(resultArray)
         } catch (e: Exception) {
             promise.reject("GET_INSTALLED_APPS_ERROR", "Failed to get installed apps: ${e.message}", e)
+        }
+    }
+
+    //접근성 설정 화면 열기
+    @ReactMethod
+    fun openAccessibilitySettings() {
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        
+        reactApplicationContext.getCurrentActivity()?.startActivity(intent)
+    }
+
+    // 2. ✅ [수정] 접근성 권한 상태 확인 함수
+    @ReactMethod
+    fun isAccessibilityServiceEnabled(promise: Promise) {
+        try {
+            var accessibilityEnabled = 0
+            
+            // ⭐️⭐️⭐️ 이 부분이 수정되었습니다 ⭐️⭐️⭐️
+            val serviceName = reactApplicationContext.packageName + "/" + AppLockService::class.java.canonicalName
+            // ⭐️⭐️⭐️ 
+            
+            try {
+                accessibilityEnabled = Settings.Secure.getInt(
+                    reactApplicationContext.contentResolver,
+                    Settings.Secure.ACCESSIBILITY_ENABLED
+                )
+            } catch (e: Settings.SettingNotFoundException) {
+                promise.resolve(false)
+                return
+            }
+
+            if (accessibilityEnabled == 1) {
+                val settingValue = Settings.Secure.getString(
+                    reactApplicationContext.contentResolver,
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                )
+                if (settingValue != null) {
+                    val mStringColonSplitter = TextUtils.SimpleStringSplitter(':')
+                    mStringColonSplitter.setString(settingValue)
+                    while (mStringColonSplitter.hasNext()) {
+                        val accessibilityService = mStringColonSplitter.next()
+                        if (accessibilityService.equals(serviceName, ignoreCase = true)) {
+                            promise.resolve(true) // 우리 서비스(AppLockService)가 활성화됨
+                            return
+                        }
+                    }
+                }
+            }
+            
+            promise.resolve(false) // 서비스가 활성화되지 않음
+        } catch (e: Exception) {
+            promise.reject("ACCESSIBILITY_CHECK_ERROR", "Failed to check accessibility service: ${e.message}", e)
         }
     }
 
