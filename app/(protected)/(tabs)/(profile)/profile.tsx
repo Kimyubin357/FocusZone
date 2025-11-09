@@ -1,9 +1,11 @@
+// app/(protected)/(tabs)/(profile)/profile.tsx
 import { AuthContext } from "@/src/services/auth/authContext";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
-import { db } from "../../../../firebaseConfig";
+import { db, storage } from "../../../../firebaseConfig";
 
 import {
   doc,
@@ -20,6 +22,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+import {
+  getDownloadURL,
+  ref,
+  uploadBytesResumable,
+} from "firebase/storage"; // 🚨 Storage 함수 임포트
 
 
 export default function Profile() {
@@ -53,37 +61,90 @@ export default function Profile() {
   // snapPoints
   const snapPoints = useMemo(() => ["60%"], []);
 
-  // 이미지 선택
   const pickImage = async () => {
+    // 1. 이미지 선택 (정사각형 강제)
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ImagePicker.MediaType.Images,
       allowsEditing: true,
-      quality: 0.7,
+      aspect: [1, 1],
+      quality: 1, // Manipulator에서 압축할 것이므로 여기선 1(원본)로 둠
     });
-    if (!result.canceled) {
-      setProfileImage(result.assets[0].uri);
+
+    if (result.canceled) {
+      return;
+    }
+
+    const sourceUri = result.assets[0].uri;
+
+    try {
+      // 2. 이미지 리사이즈 및 압축
+      const manipResult = await ImageManipulator.manipulateAsync(
+        sourceUri, // 원본 이미지 URI
+        [
+          // ✅ 프로필 이미지에 적합한 500x500 픽셀로 리사이즈
+          { resize: { width: 500, height: 500 } } 
+        ],
+        { 
+          compress: 0.7, // ✅ 70% 품질로 압축
+          format: ImageManipulator.SaveFormat.JPEG // JPEG로 저장
+        }
+      );
+
+      // 3. 리사이즈된 이미지의 URI를 상태에 저장
+      setProfileImage(manipResult.uri);
+
+    } catch (error) {
+      console.error("이미지 처리 중 에러:", error);
+      Alert.alert("오류", "이미지를 처리하는 중 문제가 발생했습니다.");
     }
   };
 
-  // ✅ handleSave 함수를 수정합니다.
+  // ✅ [수정 1] 이미지를 Storage에 업로드하고 URL을 반환하는 함수
+  const uploadImageAsync = async (uri: string) => {
+    // 1. URI로부터 Blob(파일 데이터) 생성
+    const response = await fetch(uri);
+    const blob = await response.blob();
+
+    // 2. Storage 참조 생성 (파일 경로/이름 지정)
+    // 'profileImages/[유저UID].jpeg'로 저장
+    const storageRef = ref(storage, `profileImages/${user!.uid}`);
+
+    // 3. 파일 업로드
+    const uploadTask = await uploadBytesResumable(storageRef, blob);
+
+    // 4. 업로드 완료 후 다운로드 URL 가져오기
+    const downloadURL = await getDownloadURL(uploadTask.ref);
+    return downloadURL;
+  };
+
+  // ✅ [수정 2] handleSave 함수
   const handleSave = async () => {
     if (!user) return;
 
-    // 저장할 데이터 객체
-    const updatedData = {
-      nickname: nickname.trim(),
-      profileImage,
-    };
+    let profileUrlToSave = profileImage; // 기본값 (변경 안 할 경우)
 
     try {
-      // 1. Firestore 업데이트
+      // 1. 이미지가 변경되었는지 확인 (로컬 file 경로인지 확인)
+      if (profileImage.startsWith("file://")) {
+        // 2. 이미지가 변경되었으면 Storage에 업로드
+        profileUrlToSave = await uploadImageAsync(profileImage);
+        // 이제 profileUrlToSave는 'https://...' 웹 URL입니다.
+      }
+
+      // 3. 저장할 데이터 객체 (웹 URL 또는 변경 안 된 닉네임)
+      const updatedData = {
+        nickname: nickname.trim(),
+        profileImage: profileUrlToSave, // 🚨 storage 웹 URL을 저장
+      };
+
+      // 4. Firestore 업데이트
       await updateDoc(doc(db, "users", user.uid), updatedData);
 
-      // 2. AuthContext 및 AsyncStorage 업데이트
+      // 5. AuthContext 및 AsyncStorage 업데이트
       updateUser(updatedData);
 
       Alert.alert("저장 완료", "프로필이 업데이트되었습니다.");
-      bottomSheetRef.current?.close(); // 바텀시트 닫기
+      bottomSheetRef.current?.close();
     } catch (error) {
       console.error(error);
       Alert.alert("에러", "프로필 저장 중 문제가 발생했습니다.");
@@ -109,9 +170,6 @@ export default function Profile() {
               }
               style={styles.avatar}
             />
-            <View style={styles.cameraIconWrapper}>
-              <Text style={{ fontSize: 16 }}>📷</Text>
-            </View>
           </View>
           <Text style={styles.nickname}>{user?.nickname}</Text>
         </TouchableOpacity>
@@ -273,14 +331,6 @@ const styles = StyleSheet.create({
     height: 90,
     borderRadius: 45,
     backgroundColor: "#ddd",
-  },
-  cameraIconWrapper: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 4,
   },
   nickname: {
     marginTop: 10,
