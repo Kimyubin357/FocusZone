@@ -1,3 +1,4 @@
+// src/services/location/locationSyncService.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import {
@@ -190,11 +191,6 @@ const stopSync = async () => {
         firestoreUnsubscribe();
         firestoreUnsubscribe = undefined;
     }
-    await AsyncStorage.removeItem(GROUP_PLACES_STORAGE_KEY);
-    await AsyncStorage.removeItem(LOCK_STATE_KEY);
-    await AsyncStorage.removeItem(GROUP_SYNC_STATUS_KEY);
-    await AsyncStorage.removeItem(CATEGORIZED_APPS_KEY); // 🚨 [신규] 맵 삭제
-    console.log('[Sync Service] 동기화 중지 및 AsyncStorage 초기화.');
 };
 
 export const startSync = () => {

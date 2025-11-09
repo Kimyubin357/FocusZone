@@ -1,6 +1,11 @@
+// src/services/auth/authContext.tsx
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { createContext, PropsWithChildren, useEffect, useState } from "react";
+import { NativeModules } from "react-native"; // 🚨 [수정 1] NativeModules 임포트
+
+// 네이티브 모듈 접근
+const { BlockedApps } = NativeModules;
 
 type UserType = {
   uid: string;
@@ -35,6 +40,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const router = useRouter();
 
   const authStorageKey = "auth-key"; //AsyncStorage에 저장할 때 사용할 키
+
+  // 🚨 [수정 2] 로그아웃 시 삭제할 모든 키 정의
+  const allUserStorageKeys = [
+    authStorageKey,
+    "personalFocusPlaces",  // 개인 장소 키
+    "groupfocusPlaces",     // 그룹 장소 키
+    "groupSyncStatus",      // 그룹 동기화 상태 키
+    "currentLockState",     // 현재 잠금 상태 키
+    "categorizedInstalledApps", // 앱 카테고리 맵 키
+    
+  ];
 
   const storeAuthState = async (newState: {
     isLoggedIn: boolean;
@@ -85,12 +101,32 @@ export function AuthProvider({ children }: PropsWithChildren) {
     storeAuthState({ isLoggedIn: true, user: userData });
     router.replace("/(protected)/(tabs)/(focus_zone)");//페이지 라우터 변경
   }
-  const logOut = () => {
+  const logOut = async () => {
+    try {
+      // 1. 네이티브 모듈을 호출하여 앱 잠금 즉시 해제
+      if (BlockedApps) {
+        await BlockedApps.setBlockedApps([]);
+        console.log("[AuthContext] Apps unlocked.");
+      }
+    } catch (e) {
+      console.error("[AuthContext] Failed to unlock apps:", e);
+    }
+
+    try {
+      // 2. 정의된 모든 키를 AsyncStorage에서 한 번에 삭제
+      await AsyncStorage.multiRemove(allUserStorageKeys);
+      console.log("[AuthContext] All user data cleared from AsyncStorage.");
+    } catch (e) {
+      console.error("[AuthContext] Failed to clear AsyncStorage:", e);
+    }
+
+    // 3. React 상태 업데이트
     setIsLoggedIn(false);
     setUser(undefined);
-    storeAuthState({ isLoggedIn: false });
+
+    // 4. 로그인 페이지로 이동
     router.replace("/(auth)/login_main");
-  }
+  };
 
   //auth context를 사용해서 모든 하위 컴포넌트에 상태를 전달하는 역할을 함
   return (
