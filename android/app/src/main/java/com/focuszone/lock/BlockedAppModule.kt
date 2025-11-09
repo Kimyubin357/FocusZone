@@ -1,22 +1,24 @@
 package com.focuszone.lock
 
-import android.content.pm.PackageManager
+import android.app.AppOpsManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.util.Base64
+import android.util.Log
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.*
 import java.io.ByteArrayOutputStream
-import android.provider.Settings
-import android.text.TextUtils
-import android.content.Intent
-import com.focuszone.lock.AppLockService
-
-object BlockedAppsHolder {
-    var blockedApps: List<String> = emptyList() // 차단 앱 패키지명 저장 리스트
-}
 
 class BlockedAppsModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
@@ -24,40 +26,104 @@ class BlockedAppsModule(reactContext: ReactApplicationContext) :
     override fun getName(): String = "BlockedApps"
 
     companion object {
+        var blockedAppsSet: Set<String> = emptySet()
         private const val DEFAULT_CATEGORY = "Other"
-        private const val ERROR_NO_APPS = "NO_APPS_PROVIDED"
     }
 
-    /*RN → Kotlin : 차단할 앱 목록 설정 */
+    // ✅ 알림 권한 체크
+    @ReactMethod
+    fun checkNotificationPermission(promise: Promise) {
+        try {
+            val enabled = NotificationManagerCompat.from(reactApplicationContext).areNotificationsEnabled()
+            promise.resolve(enabled)
+        } catch (e: Exception) {
+            promise.reject("CHECK_NOTIFICATION_ERROR", e)
+        }
+    }
+
+    // ✅ 알림 권한 요청
+    @ReactMethod
+    fun requestNotificationPermission() {
+        val activity = currentActivity ?: return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                1001
+            )
+        }
+    }
+
+    // ✅ 사용량 접근 권한 체크
+    @ReactMethod
+    fun checkUsageStatsPermission(promise: Promise) {
+        val appOps = reactApplicationContext.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        val mode = appOps.checkOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            android.os.Process.myUid(),
+            reactApplicationContext.packageName
+        )
+        promise.resolve(mode == AppOpsManager.MODE_ALLOWED)
+    }
+
+    // ✅ 사용량 접근 권한 요청
+    @ReactMethod
+    fun requestUsageStatsPermission() {
+        val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        reactApplicationContext.startActivity(intent)
+    }
+
+    // ✅ Overlay 권한 체크
+    @ReactMethod
+    fun checkOverlayPermission(promise: Promise) {
+        promise.resolve(Settings.canDrawOverlays(reactApplicationContext))
+    }
+
+    // ✅ Overlay 권한 요청
+    @ReactMethod
+    fun requestOverlayPermission() {
+        val intent = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:${reactApplicationContext.packageName}")
+        )
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        reactApplicationContext.startActivity(intent)
+    }
+
+    // ✅ 앱 차단 리스트 설정
     @ReactMethod
     fun setBlockedApps(apps: ReadableArray, promise: Promise) {
         try {
-            val appList = mutableListOf<String>()
+            val appSet = mutableSetOf<String>()
             for (i in 0 until apps.size()) {
-                apps.getString(i)?.let { appList.add(it) }
+                apps.getString(i)?.let { appSet.add(it) }
             }
-            
-            // 빈 배열도 허용 (차단 해제 목적)
-            BlockedAppsHolder.blockedApps = appList
+
+            blockedAppsSet = appSet
+            Log.d("BlockedAppModule", "Blocked apps updated: $blockedAppsSet")
+
+            if (blockedAppsSet.isNotEmpty()) {
+                startAppLockService()
+            } else {
+                stopAppLockService()
+            }
+
             promise.resolve(true)
         } catch (e: Exception) {
-            promise.reject("SET_BLOCKED_APPS_ERROR", "Failed to set blocked apps: ${e.message}", e)
+            promise.reject("SET_BLOCKED_APPS_ERROR", e)
         }
     }
 
-    /*RN → Kotlin : 현재 차단 앱 목록 가져오기 */
     @ReactMethod
     fun getBlockedApps(promise: Promise) {
-        try {
-            val resultArray = Arguments.createArray()
-            BlockedAppsHolder.blockedApps.forEach { resultArray.pushString(it) }
-            promise.resolve(resultArray)
-        } catch (e: Exception) {
-            promise.reject("GET_BLOCKED_APPS_ERROR", "Failed to get blocked apps: ${e.message}", e)
-        }
+        val array = Arguments.createArray()
+        blockedAppsSet.forEach { array.pushString(it) }
+        promise.resolve(array)
     }
 
-    /* 설치된 앱 전체 목록 반환 */
+    // ✅ 설치된 앱 목록
     @ReactMethod
     fun getInstalledApps(promise: Promise) {
         try {
@@ -66,30 +132,25 @@ class BlockedAppsModule(reactContext: ReactApplicationContext) :
             val resultArray = Arguments.createArray()
 
             for (appInfo in appInfos) {
-        
                 if ((appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0 ||
                     (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
                 ) continue
 
-              
                 val launchIntent = pm.getLaunchIntentForPackage(appInfo.packageName)
                 if (launchIntent == null) continue
 
-               
                 val appMap = Arguments.createMap()
                 appMap.putString("packageName", appInfo.packageName)
                 appMap.putString("appName", pm.getApplicationLabel(appInfo).toString())
 
-                // 아이콘을 Base64로 변환하여 추가
                 try {
                     val icon = pm.getApplicationIcon(appInfo.packageName)
                     val iconBase64 = drawableToBase64(icon)
                     appMap.putString("icon", iconBase64)
-                } catch (e: Exception) {
-                    appMap.putString("icon", "") // 아이콘 로드 실패 시 빈 문자열
+                } catch (_: Exception) {
+                    appMap.putString("icon", "")
                 }
 
-            
                 val category = when (appInfo.category) {
                     ApplicationInfo.CATEGORY_GAME -> "Game"
                     ApplicationInfo.CATEGORY_AUDIO -> "Audio"
@@ -106,76 +167,32 @@ class BlockedAppsModule(reactContext: ReactApplicationContext) :
 
             promise.resolve(resultArray)
         } catch (e: Exception) {
-            promise.reject("GET_INSTALLED_APPS_ERROR", "Failed to get installed apps: ${e.message}", e)
+            promise.reject("GET_INSTALLED_APPS_ERROR", e)
         }
     }
 
-    //접근성 설정 화면 열기
+    // ✅ Foreground service 시작
     @ReactMethod
-    fun openAccessibilitySettings() {
-        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-        
-        reactApplicationContext.getCurrentActivity()?.startActivity(intent)
+    fun startAppLockService() {
+        val intent = Intent(reactApplicationContext, AppLockService::class.java)
+        ContextCompat.startForegroundService(reactApplicationContext, intent)
     }
 
-    // 2. ✅ [수정] 접근성 권한 상태 확인 함수
     @ReactMethod
-    fun isAccessibilityServiceEnabled(promise: Promise) {
-        try {
-            var accessibilityEnabled = 0
-            
-            // ⭐️⭐️⭐️ 이 부분이 수정되었습니다 ⭐️⭐️⭐️
-            val serviceName = reactApplicationContext.packageName + "/" + AppLockService::class.java.canonicalName
-            // ⭐️⭐️⭐️ 
-            
-            try {
-                accessibilityEnabled = Settings.Secure.getInt(
-                    reactApplicationContext.contentResolver,
-                    Settings.Secure.ACCESSIBILITY_ENABLED
-                )
-            } catch (e: Settings.SettingNotFoundException) {
-                promise.resolve(false)
-                return
-            }
-
-            if (accessibilityEnabled == 1) {
-                val settingValue = Settings.Secure.getString(
-                    reactApplicationContext.contentResolver,
-                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-                )
-                if (settingValue != null) {
-                    val mStringColonSplitter = TextUtils.SimpleStringSplitter(':')
-                    mStringColonSplitter.setString(settingValue)
-                    while (mStringColonSplitter.hasNext()) {
-                        val accessibilityService = mStringColonSplitter.next()
-                        if (accessibilityService.equals(serviceName, ignoreCase = true)) {
-                            promise.resolve(true) // 우리 서비스(AppLockService)가 활성화됨
-                            return
-                        }
-                    }
-                }
-            }
-            
-            promise.resolve(false) // 서비스가 활성화되지 않음
-        } catch (e: Exception) {
-            promise.reject("ACCESSIBILITY_CHECK_ERROR", "Failed to check accessibility service: ${e.message}", e)
-        }
+    fun stopAppLockService() {
+        val intent = Intent(reactApplicationContext, AppLockService::class.java)
+        reactApplicationContext.stopService(intent)
     }
 
-    // Drawable을 Base64로 변환
     private fun drawableToBase64(drawable: Drawable): String {
         val bitmap = drawableToBitmap(drawable)
         val outputStream = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-        val byteArray = outputStream.toByteArray()
-        return Base64.encodeToString(byteArray, Base64.NO_WRAP)
+        return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
     }
 
-    // Drawable을 Bitmap으로 변환
     private fun drawableToBitmap(drawable: Drawable): Bitmap {
-        if (drawable is BitmapDrawable) {
-            return drawable.bitmap
-        }
+        if (drawable is BitmapDrawable) return drawable.bitmap
 
         val bitmap = Bitmap.createBitmap(
             drawable.intrinsicWidth,

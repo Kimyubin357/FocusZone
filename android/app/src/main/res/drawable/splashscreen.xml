@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android" android:opacity="opaque">
+    <!-- 배경 색상 -->
+    <item android:drawable="@color/splashscreen_background"/>
+    
+    <!-- (선택) 여기에 앱 로고가 중앙에 들어갈 수 있습니다. -->
+    <!-- <item>
+        <bitmap
+            android:src="@mipmap/ic_launcher"
+            android:gravity="center"/>
+    </item> -->
+</layer-list>

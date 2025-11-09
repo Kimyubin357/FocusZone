@@ -1,103 +1,122 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-  <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
-  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
-  <uses-permission android:name="android.permission.INTERNET"/>
-  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-  <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
-  <uses-permission android:name="android.permission.VIBRATE"/>
-  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-  <uses-permission
-      android:name="android.permission.QUERY_ALL_PACKAGES"
-      tools:ignore="QueryAllPackagesPermission" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-  <queries>
-    <!-- Support checking for http(s) links via the Linking API -->
-    <intent>
-      <action android:name="android.intent.action.VIEW" />
-      <category android:name="android.intent.category.BROWSABLE" />
-      <data android:scheme="https" />
-    </intent>
-  </queries>
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-  <application 
-    android:name=".MainApplication"
-    android:label="@string/app_name" 
-    android:icon="@mipmap/ic_launcher" 
-    android:roundIcon="@mipmap/ic_launcher_round" 
-    android:allowBackup="false" 
-    android:theme="@style/AppTheme" 
-    android:supportsRtl="true" 
-    android:enableOnBackInvokedCallback="false">
+    <!-- ✅ [추가] 사용량 통계 접근 권한 -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
 
-    <meta-data android:name="com.google.android.geo.API_KEY" android:value="AIzaSyBTbK1Rj0Iq_uay8__IsuEdMRt00toi-OQ"/>
-    <meta-data android:name="expo.modules.updates.ENABLED" android:value="false"/>
-    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
-    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
-    <activity 
-      android:name=".MainActivity" 
-      android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" 
-      android:launchMode="singleTask" 
-      android:windowSoftInputMode="adjustResize" 
-      android:theme="@style/Theme.App.SplashScreen" 
-      android:exported="true" 
-      android:screenOrientation="portrait">
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 
-      <intent-filter>
-        <action android:name="android.intent.action.MAIN"/>
-        <category android:name="android.intent.category.LAUNCHER"/>
-      </intent-filter>
-      <intent-filter>
-        <action android:name="android.intent.action.VIEW"/>
-        <category android:name="android.intent.category.DEFAULT"/>
-        <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="focuszone"/>
-      </intent-filter>
+    <queries>
+        <!-- Support checking for http(s) links via the Linking API -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
 
-      <!-- 
-        ✅ 3. 새로 추가할 Android App Link 필터 (https://)
-        이 부분이 핵심입니다.
-      -->
-      <intent-filter android:autoVerify="true">
-        <action android:name="android.intent.action.VIEW"/>
-        <category android:name="android.intent.category.DEFAULT"/>
-        <category android:name="android.intent.category.BROWSABLE"/>
+    <application
+        android:name=".MainApplication"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="false"
+        android:theme="@style/AppTheme"
+        android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="false">
 
-        <!-- App Links는 https 스킴이 필수입니다 -->
-        <data android:scheme="https" />
-        <!-- http도 포함하는 것이 좋습니다 -->
-        <data android:scheme="http" /> 
-        
-        <!-- Firebase 호스팅 기본 도메인 -->
-        <data android:host="focuszone-568cc.web.app" />
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyBTbK1Rj0Iq_uay8__IsuEdMRt00toi-OQ" />
+        <meta-data
+            android:name="expo.modules.updates.ENABLED"
+            android:value="false" />
+        <meta-data
+            android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH"
+            android:value="ALWAYS" />
+        <meta-data
+            android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS"
+            android:value="0" />
 
-        <!-- (선택) /join 경로만 처리할 경우 -->
-        <data android:pathPrefix="/join" /> 
-      </intent-filter>
-      
-    </activity>
-    <!-- 잠금 화면 액티비티 -->
-    <activity
-        android:name=".lock.LockActivity"
-        android:theme="@style/Theme.App.SplashScreen"
-        android:exported="false" />
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.App.SplashScreen"
+            android:exported="true"
+            android:screenOrientation="portrait">
 
-    <!-- 접근성 서비스 등록 -->
-    <service
-        android:name=".lock.AppLockService"
-        android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-        android:exported="true">
-      <intent-filter>
-        <action android:name="android.accessibilityservice.AccessibilityService" />
-      </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="focuszone" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="focuszone-568cc.web.app" />
+                <data android:pathPrefix="/join" />
+            </intent-filter>
 
-      <meta-data
-          android:name="android.accessibilityservice"
-          android:resource="@xml/accessibility_service_config" />
-    </service>
-    <uses-library android:name="org.apache.http.legacy" android:required="false"/>
-  </application>
+        </activity>
+
+        <!-- ✅ [수정] 잠금 화면 액티비티 테마 및 속성 변경 -->
+        <activity
+            android:name=".lock.LockActivity"
+            android:theme="@style/Theme.Transparent"
+            android:launchMode="singleTask"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:exported="false" />
+
+        <!-- ❌ [제거] 기존 접근성 서비스 등록 코드를 완전히 삭제합니다. -->
+        <!--
+        <service
+            android:name=".lock.AppLockService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+        -->
+
+        <!-- ✅ [추가] 새로운 Polling 서비스 (ForegroundService) 등록 -->
+        <service
+            android:name=".lock.AppLockService"
+            android:exported="false" />
+
+        <uses-library
+            android:name="org.apache.http.legacy"
+            android:required="false" />
+    </application>
 </manifest>
