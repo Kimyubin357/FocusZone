@@ -1,7 +1,3 @@
-// app/(protected)/(tabs)/(group_zone)/add.tsx — Minimal theming (preserve all UI/logic)
-
-
-
 import { Ionicons } from "@expo/vector-icons";
 
 // ⭐️ 1. [추가] useFocusEffect, useIsFocused, useCallback 임포트
@@ -297,7 +293,7 @@ export default function AddGroupPlace() {
         // 1. useState가 이미 params.updatedCategories로 상태를 설정했음
 
         // 2. 파라미터를 "사용완료" 처리 (중복 실행 방지)
-        //    -> updatedCategories를 currentCategories로 "백업"
+        //     -> updatedCategories를 currentCategories로 "백업"
         router.setParams({
           updatedCategories: undefined,
           currentCategories: params.updatedCategories,
@@ -432,6 +428,9 @@ export default function AddGroupPlace() {
           // [수정] creatorId -> ownerId
 
           ownerId: user.uid,
+          
+          // [수정] 1. memberIds 배열 추가 (비정규화)
+          memberIds: [user.uid],
 
           inviteCode: inviteCode,
 
@@ -457,11 +456,10 @@ export default function AddGroupPlace() {
 
 
         // 5. 'members' 서브 컬렉션에 그룹장 정보 저장
-
+        
+        // [수정] 2. members 서브 컬렉션의 문서 ID를 user.uid로 지정
         const memberRef = doc(
-
-          collection(db, "groupLocations", newGroupRef.id, "members")
-
+          db, "groupLocations", newGroupRef.id, "members", user.uid
         );
 
         // (선택) user 프로필에서 displayName 가져오기

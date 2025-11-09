@@ -307,9 +307,27 @@ export default function GroupZone() {
         style: "destructive",
         onPress: async () => {
           try {
-            await deleteDoc(doc(db, "groupLocations", menuForId));
-            // setList((prev) => prev.filter((x) => x.id !== menuForId));
+            // 1. 삭제할 부모 문서의 참조
+            const groupDocRef = doc(db, "groupLocations", menuForId);
+
+            // 2. 'members' 서브 컬렉션의 참조
+            const membersColRef = collection(groupDocRef, "members");
+
+            // 3. 'members' 서브 컬렉션의 모든 문서를 가져옴
+            const membersSnap = await getDocs(membersColRef);
+
+            // 4. 모든 멤버 문서를 삭제 (병렬 처리)
+            const deletePromises = membersSnap.docs.map((memberDoc) =>
+              deleteDoc(memberDoc.ref)
+            );
+            await Promise.all(deletePromises);
+
+            // 5. 서브 컬렉션이 모두 삭제된 후, 부모 문서를 삭제
+            await deleteDoc(groupDocRef);
+
             Alert.alert("완료", "그룹이 삭제되었습니다.");
+            // (onSnapshot이 켜져 있으므로 setList는 자동으로 갱신됨)
+
           } catch (e) {
             console.log("delete error", e);
             Alert.alert("오류", "삭제 중 문제가 발생했습니다.");
