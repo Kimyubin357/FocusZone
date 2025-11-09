@@ -300,11 +300,12 @@ export default function GroupZone() {
       return;
     }
 
+    closeMenu(); // ⭐️ Alert 표시 전에 먼저 닫기
+
     Alert.alert("그룹 삭제", "정말로 이 그룹을 삭제하시겠습니까?", [
-      { text: "취소", style: "cancel", onPress: closeMenu },
+      { text: "취소", style: "cancel" },
       {
         text: "삭제",
-        style: "destructive",
         onPress: async () => {
           try {
             await deleteDoc(doc(db, "groupLocations", menuForId));

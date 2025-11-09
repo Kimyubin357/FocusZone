@@ -16,31 +16,29 @@ import {
 } from "react";
 import {
   Alert,
+  Dimensions,
   FlatList,
-  Modal, // [추가]
+  Modal,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import MapView, { Circle, PROVIDER_GOOGLE, Region } from "react-native-maps";
-// [제거] import Popover from "react-native-popover-view";
-
-// --- ADDED: locationService 임포트 ---
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2) TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 type Place = {
-  id: string;// 집중장소 고유 아이디
-  name: string; // 집중장소 이름
-  address: string; // string 주소
-  latitude: number; // 위도
-  longitude: number; // 경도
-  radius: number; // 반경
-  isActive: boolean; // 
-  // 🔽 이 줄을 추가하면 에러가 사라집니다.
-  blockedApps?: string[]; // '?'를 붙여서 선택적 필드로 만들면 더 안전합니다.
+  id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  radius: number;
+  isActive: boolean;
+  blockedApps?: string[];
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,19 +54,26 @@ export default function FocusZoneScreen() {
 
   // 3-3) UI CONSTANTS
   const snapPoints = useMemo(() => ["5%", "60%", "90%"], []);
+  const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
+  const MENU_W = 180;
+  const MENU_H = 100;
 
   // 3-4) STATE
   const [places, setPlaces] = useState<Place[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
 
-  // 추가
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
-  } | null>(null); // 추가
+  } | null>(null);
 
-  // 지도 카메라 상태(초기값: 서울 시청)
   const [region, setRegion] = useState<Region>({
     latitude: 37.5665,
     longitude: 126.978,
@@ -79,14 +84,12 @@ export default function FocusZoneScreen() {
   // ───────────────────────────────────────────────────────────────────────────
   // 4) EFFECTS
   // ───────────────────────────────────────────────────────────────────────────
-  // 탭이 포커스될 때마다 저장된 장소 로드
   useFocusEffect(
     useCallback(() => {
       loadPlaces();
     }, [])
   );
   
-  // 앱 시작 시 현재 위치 가져오기
   useEffect(() => {
     (async () => {
       try {
@@ -99,7 +102,6 @@ export default function FocusZoneScreen() {
             latitude: loc.coords.latitude,
             longitude: loc.coords.longitude,
           });
-          // 초기 카메라 위치를 현재 위치로 설정
           setRegion({
             latitude: loc.coords.latitude,
             longitude: loc.coords.longitude,
@@ -134,7 +136,6 @@ export default function FocusZoneScreen() {
 
   const loadPlaces = async () => {
     try {
-      // [수정] 'focusPlaces' -> 'personalFocusPlaces'로 키 이름 변경
       const saved = await AsyncStorage.getItem("personalFocusPlaces");
       setPlaces(saved ? JSON.parse(saved) : []);
     } catch (e) {
@@ -145,7 +146,6 @@ export default function FocusZoneScreen() {
 
   const savePlaces = async (updated: Place[]) => {
     try {
-      // [수정] 'focusPlaces' -> 'personalFocusPlaces'로 키 이름 변경
       await AsyncStorage.setItem("personalFocusPlaces", JSON.stringify(updated));
       setPlaces(updated);
     } catch {
@@ -153,16 +153,24 @@ export default function FocusZoneScreen() {
     }
   };
 
-
+  // ⭐️ [추가] 메뉴 위치 계산 (group_zone과 동일)
+  const menuTop = (() => {
+    if (!menuAnchor) return 90;
+    const below = menuAnchor.y + menuAnchor.h + 8;
+    const above = menuAnchor.y - MENU_H - 8;
+    return below + MENU_H <= SCREEN_H ? below : Math.max(8, above);
+  })();
+  const menuLeft = (() => {
+    if (!menuAnchor) return SCREEN_W - MENU_W - 20;
+    const preferred = menuAnchor.x + menuAnchor.w - MENU_W;
+    return Math.min(Math.max(8, preferred), SCREEN_W - MENU_W - 8);
+  })();
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 6) HANDLERS (버튼/목록/메뉴/네비 등)
+  // 6) HANDLERS
   // ───────────────────────────────────────────────────────────────────────────
-  // --- MODIFIED: 전체 활성화/비활성화 토글 함수로 변경 ---
   const toggleAllActive = () => {
-    // 현재 활성화된 장소가 하나라도 있는지 확인
     const isAnyActive = places.some(p => p.isActive);
-    // 하나라도 켜져 있으면 모두 끄고, 모두 꺼져 있으면 모두 켬
     const updated = places.map((p) => ({ ...p, isActive: !isAnyActive }));
     savePlaces(updated);
   };
@@ -188,7 +196,6 @@ export default function FocusZoneScreen() {
       const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
-      // 상태 업데이트
       setUserLocation({
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
@@ -202,7 +209,7 @@ export default function FocusZoneScreen() {
 
   const handleEdit = () => {
     if (!selectedPlace) return;
-    setMenuVisible(false);
+    closeMenu();
     router.push({
       pathname: "/(protected)/(tabs)/(focus_zone)/add",
       params: {
@@ -220,7 +227,7 @@ export default function FocusZoneScreen() {
 
   const handleDelete = () => {
     if (!selectedPlace) return;
-    setMenuVisible(false);
+    closeMenu();
     Alert.alert("삭제 확인", `"${selectedPlace.name}"를 삭제하시겠습니까?`, [
       { text: "취소", style: "cancel" },
       {
@@ -229,10 +236,16 @@ export default function FocusZoneScreen() {
         onPress: () => {
           const updated = places.filter((p) => p.id !== selectedPlace.id);
           savePlaces(updated);
-          setSelectedPlace(null); // [추가] 선택 초기화
+          setSelectedPlace(null);
         },
       },
     ]);
+  };
+
+  const closeMenu = () => {
+    setMenuVisible(false);
+    setMenuAnchor(null);
+    setSelectedPlace(null);
   };
 
   const goToAdd = () => {
@@ -240,56 +253,64 @@ export default function FocusZoneScreen() {
   };
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 7) RENDER: 리스트 아이템/빈 리스트/메인 UI
+  // 7) RENDER: 리스트 아이템
   // ───────────────────────────────────────────────────────────────────────────
-  const renderItem = ({ item }: { item: Place }) => (
-    <View style={styles.cardContainer}>
-      <TouchableOpacity
-        style={[styles.card, item.isActive && styles.selectedCard]}
-        onPress={() => toggleSelection(item)}
-        activeOpacity={0.7}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <Ionicons
-            name={item.isActive ? "checkmark-circle" : "close-circle"}
-            size={22}
-            color={item.isActive ? "#22C55E" : "#D1D5DB"}
-            style={{ marginRight: 8 }}
-          />
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontWeight: "bold", fontSize: 16, color: "#222" }}>
-              {item.name}
-            </Text>
-            <Text
-              style={{ color: "#6B7280", fontSize: 13, marginTop: 2 }}
-              numberOfLines={1}
+  const renderItem = ({ item }: { item: Place }) => {
+    // ⭐️ [수정] useRef 제거하고 이벤트에서 직접 측정
+    const handleMenuPress = (event: any) => {
+      event.target.measure((x: number, y: number, width: number, height: number, pageX: number, pageY: number) => {
+        setSelectedPlace(item);
+        setMenuAnchor({ x: pageX, y: pageY, w: width, h: height });
+        setMenuVisible(true);
+      });
+    };
+
+    return (
+      <View style={styles.cardContainer}>
+        <TouchableOpacity
+          style={[styles.card, item.isActive && styles.selectedCard]}
+          onPress={() => toggleSelection(item)}
+          activeOpacity={0.7}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Ionicons
+              name={item.isActive ? "checkmark-circle" : "close-circle"}
+              size={22}
+              color={item.isActive ? "#22C55E" : "#D1D5DB"}
+              style={{ marginRight: 8 }}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: "bold", fontSize: 16, color: "#222" }}>
+                {item.name}
+              </Text>
+              <Text
+                style={{ color: "#6B7280", fontSize: 13, marginTop: 2 }}
+                numberOfLines={1}
+              >
+                {item.address}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => moveCameraToPlace(item)}
+              style={{ paddingHorizontal: 8, paddingVertical: 4, marginRight: 4 }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              {item.address}
-            </Text>
+              <Ionicons name="navigate-outline" size={20} color="#3B82F6" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleMenuPress}
+              style={{ padding: 6 }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="ellipsis-vertical" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            onPress={() => moveCameraToPlace(item)}
-            style={{ paddingHorizontal: 8, paddingVertical: 4, marginRight: 4 }}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="navigate-outline" size={20} color="#3B82F6" />
-          </TouchableOpacity>
-
-          {/* [수정] Popover 대신 TouchableOpacity + Modal 사용 */}
-          <TouchableOpacity
-            onPress={() => {
-              setSelectedPlace(item);
-              setMenuVisible(true);
-            }}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="ellipsis-vertical" size={20} color="#9CA3AF" />
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
-    </View>
-  );
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   const renderEmptyList = () => (
     <View style={styles.emptyContainer}>
@@ -300,14 +321,14 @@ export default function FocusZoneScreen() {
       </Text>
     </View>
   );
-  // --- ADDED: 버튼 텍스트와 아이콘을 동적으로 결정하기 위한 변수 ---
+
   const isAnyPlaceActive = places.some(p => p.isActive);
+
   // ───────────────────────────────────────────────────────────────────────────
   // 8) RETURN
   // ───────────────────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      {/* 지도 (Google) */}
       <MapView
         ref={mapRef}
         mapType="standard"
@@ -334,7 +355,6 @@ export default function FocusZoneScreen() {
         ))}
       </MapView>
 
-      {/* [수정] 현재 위치 버튼만 지도에 남김 */}
       <TouchableOpacity
         style={styles.locationButton}
         onPress={getCurrentLocation}
@@ -345,7 +365,6 @@ export default function FocusZoneScreen() {
         </View>
       </TouchableOpacity>
 
-      {/* 하단 시트 */}
       <BottomSheet
         ref={bottomSheetRef}
         index={0}
@@ -397,38 +416,36 @@ export default function FocusZoneScreen() {
         </BottomSheetView>
       </BottomSheet>
 
-      {/* [추가] 메뉴 Modal */}
+      {/* ⭐️ [수정] group_zone과 동일한 메뉴 */}
       <Modal
         visible={menuVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setMenuVisible(false)}
+        onRequestClose={closeMenu}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setMenuVisible(false)}
+        <Pressable style={styles.menuBackdrop} onPress={closeMenu}>
+          <View />
+        </Pressable>
+        <View
+          style={[
+            styles.menuBox,
+            {
+              position: 'absolute',
+              top: menuTop,
+              left: menuLeft,
+            }
+          ]}
         >
-          <View style={styles.menuModal}>
-            <TouchableOpacity
-              style={styles.menuModalItem}
-              onPress={handleEdit}
-            >
-              <Ionicons name="create-outline" size={20} color="#222" />
-              <Text style={styles.menuModalText}>수정</Text>
-            </TouchableOpacity>
-            <View style={styles.menuDivider} />
-            <TouchableOpacity
-              style={styles.menuModalItem}
-              onPress={handleDelete}
-            >
-              <Ionicons name="trash-outline" size={20} color="#EF4444" />
-              <Text style={[styles.menuModalText, { color: "#EF4444" }]}>
-                삭제
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
+          <Pressable style={styles.menuItem} onPress={handleEdit}>
+            <Text style={styles.menuText}>수정하기</Text>
+          </Pressable>
+          <View style={styles.menuDivider} />
+          <Pressable style={styles.menuItem} onPress={handleDelete}>
+            <Text style={[styles.menuText, styles.menuDanger]}>
+              삭제하기
+            </Text>
+          </Pressable>
+        </View>
       </Modal>
     </View>
   );
@@ -437,7 +454,6 @@ export default function FocusZoneScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  // [수정] 내 위치 버튼 - 우측 상단으로 복구
   locationButton: {
     position: "absolute",
     top: 16,
@@ -472,7 +488,6 @@ const styles = StyleSheet.create({
   },
   sheetContent: { padding: 16 },
 
-  // [수정] 헤더 스타일
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -481,7 +496,6 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: "bold", color: "#222" },
   
-  // [추가] 헤더 버튼 그룹
   headerButtons: {
     flexDirection: "row",
     alignItems: "center",
@@ -494,7 +508,6 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
 
-  // [추가] 전체 활성화/비활성화 버튼
   toggleButton: {
     width: 36,
     height: 36,
@@ -504,7 +517,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  // [추가] + 버튼
   addButton: {
     width: 36,
     height: 36,
@@ -548,40 +560,35 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // [제거] popoverStyle, popoverContent 제거
-  // [추가] Modal 스타일
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
-    alignItems: "center",
+  // ⭐️ [수정] group_zone과 동일한 메뉴 스타일
+  menuBackdrop: { 
+    flex: 1, 
+    backgroundColor: "rgba(0,0,0,0.2)" 
   },
-  menuModal: {
+  menuBox: {
     backgroundColor: "#fff",
     borderRadius: 12,
-    minWidth: 180,
-    paddingVertical: 8,
+    paddingVertical: 4,
+    width: 180,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.2,
     shadowRadius: 12,
     elevation: 8,
   },
-  menuModalItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    gap: 12,
+  menuItem: { 
+    paddingVertical: 12, 
+    paddingHorizontal: 16 
   },
-  menuModalText: {
-    fontSize: 15,
+  menuText: { 
+    fontSize: 14,
     color: "#222",
-    fontWeight: "500",
   },
-  menuDivider: {
-    height: StyleSheet.hairlineWidth,
+  menuDanger: { 
+    color: "#DC2626",
+    fontWeight: "700" 
+  },
+  menuDivider: { 
+    height: 1,
     backgroundColor: "#E5E7EB",
-    marginHorizontal: 12,
   },
 });
