@@ -256,9 +256,9 @@ export default function AddFocusPlace() {
             <Ionicons name="grid-outline" size={18} color="#2563EB" />
             <Text style={styles.rowBtnText}>
               앱 목록{" "}
-              {/* <Text style={{ color: "#2563EB", fontWeight: "bold" }}>
-                {appsBlockedCount}
-              </Text> */}
+              <Text style={{ color: "#2563EB", fontWeight: "bold" }}>
+                {blockedApps.length}
+              </Text>
             </Text>
           </TouchableOpacity>
         </View>
