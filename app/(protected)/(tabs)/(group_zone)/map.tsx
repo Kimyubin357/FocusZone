@@ -267,7 +267,7 @@ export default function KakaoMapScreen() {
         if (ok) return;
       }
       const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
+        accuracy: Location.Accuracy.High,
       });
       const { latitude, longitude } = loc.coords;
       const ok = await applyAddressByCoords(latitude, longitude);
