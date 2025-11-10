@@ -41,19 +41,6 @@ class BlockedAppsModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    // ✅ 알림 권한 요청
-    @ReactMethod
-    fun requestNotificationPermission() {
-        val activity = currentActivity ?: return
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ActivityCompat.requestPermissions(
-                activity,
-                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                1001
-            )
-        }
-    }
 
     // ✅ 사용량 접근 권한 체크
     @ReactMethod

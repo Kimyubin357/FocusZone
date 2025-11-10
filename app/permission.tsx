@@ -33,12 +33,6 @@ export default function PermissionScreen() {
       />
 
       <PermissionItem
-        title="알림 권한"
-        granted={perm.notifications === "GRANTED"}
-        onPress={() => requestPermission("notifications").then(load)}
-      />
-
-      <PermissionItem
         title="다른 앱 위에 표시"
         granted={perm.overlay === "GRANTED"}
         onPress={() => {

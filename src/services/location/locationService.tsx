@@ -4,14 +4,14 @@ import * as TaskManager from "expo-task-manager";
 import { Alert, NativeModules } from "react-native";
 //노윤석 추가코드
 import {
-  arrayUnion,
-  doc,
-  getDoc,
-  increment,
-  runTransaction,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
+    arrayUnion,
+    doc,
+    getDoc,
+    increment,
+    runTransaction,
+    serverTimestamp,
+    setDoc,
+    updateDoc,
 } from "firebase/firestore";
 import { auth, db } from "../../../firebaseConfig";
 //노윤석 끝
@@ -466,59 +466,55 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
 /**
  * 위치 추적 시작 함수 (UI에서 호출)
  */
+
 export const startLocationTask = async () => {
-    // ... (기존과 동일)
-    const { status: foregroundStatus } =
-        await Location.requestForegroundPermissionsAsync();
-    if (foregroundStatus !== "granted") {
-        Alert.alert(
-            "권한 필요",
-            "정확한 위치 측정을 위해 위치 권한을 항상 허용해주세요."
-        );
-        return;
-    }
-
-    const { status: backgroundStatus } =
-        await Location.requestBackgroundPermissionsAsync();
-    if (backgroundStatus !== "granted") {
-        Alert.alert(
-            "권한 필요",
-            "백그라운드 위치 권한을 허용해야 앱이 꺼져있을 때도 집중장소를 인식할 수 있습니다."
-        );
-        return;
-    }
-
+    // ✅ 가장 먼저 추적 상태 확인
     const isTracking = await Location.hasStartedLocationUpdatesAsync(
         LOCATION_TASK_NAME
     );
+
     if (isTracking) {
-        console.log("Location tracking is already active.");
-        return;
-    }
-    
-    // ✅ [핵심 수정 1] 네이티브 앱 차단 서비스 시작 요청 (Polling Service)
-    try {
-        await BlockedApps.startAppLockService();
-        console.log("Native AppLockService started (Usage Stats Polling).");
-    } catch (e) {
-        // 만약 여기서 실패하면 Usage Stats 권한이 없거나 네이티브 모듈 문제가 있을 수 있음
-        console.error("Failed to start AppLockService", e);
-        Alert.alert("서비스 오류", "앱 차단 서비스를 시작하는 데 실패했습니다. UsageStats 및 Overlay 권한을 확인해주세요.");
-        return; 
+        console.log("⚠️ Location tracking is already active. Skipping start.");
+        return; // 여기서 함수 종료
     }
 
-    await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-        accuracy: Location.Accuracy.BestForNavigation,
-        timeInterval: 3 * 1000, // 3초 (테스트용)
-        distanceInterval: 0, // 5미터 (테스트용)
-        showsBackgroundLocationIndicator: true,
-        foregroundService: {
-            notificationTitle: "집중 모드",
-            notificationBody: "집중장소 인근인지 확인 중입니다.",
-            notificationColor: "#4A90E2",
-        },
-    });
-    console.log("Location tracking started.");
+    // ✅ 네이티브 앱 차단 서비스 시작
+    try {
+        await BlockedApps.startAppLockService();
+        console.log("✅ Native AppLockService started.");
+    } catch (e) {
+        console.error("❌ Failed to start AppLockService", e);
+        Alert.alert(
+            "서비스 오류",
+            "앱 차단 서비스를 시작하는 데 실패했습니다."
+        );
+        return;
+    }
+
+    // ✅ 위치 추적 시작
+    try {
+        await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+            accuracy: Location.Accuracy.BestForNavigation,
+            timeInterval: 3 * 1000,
+            distanceInterval: 0,
+            showsBackgroundLocationIndicator: true,
+            foregroundService: {
+                notificationTitle: "집중 모드",
+                notificationBody: "집중장소 인근인지 확인 중입니다.",
+                notificationColor: "#4A90E2",
+            },
+        });
+        console.log("✅ Location tracking started successfully.");
+    } catch (e) {
+        console.error("❌ Failed to start location tracking:", e);
+        // 실패 시 서비스도 정리
+        try {
+            await BlockedApps.stopAppLockService();
+        } catch (cleanupError) {
+            console.error("Failed to cleanup service:", cleanupError);
+        }
+    }
+
 };
 
 /**
@@ -548,13 +544,13 @@ export const stopLocationTask = async () => {
 
         // 서비스 중지 시에는 무조건 잠금 해제
         await BlockedApps.setBlockedApps([]);
-        
+
         // ✅ [핵심 수정 2] 네이티브 앱 차단 서비스 명시적 중지 요청
         try {
-             await BlockedApps.stopAppLockService();
-             console.log("Native AppLockService stopped.");
+            await BlockedApps.stopAppLockService();
+            console.log("Native AppLockService stopped.");
         } catch (e) {
-             console.error("Failed to stop AppLockService", e);
+            console.error("Failed to stop AppLockService", e);
         }
 
         await AsyncStorage.removeItem(LOCK_STATE_KEY);

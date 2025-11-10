@@ -1,6 +1,5 @@
 // src/services/permissions/permissionChecker.tsx
 import * as Location from "expo-location";
-import * as Notifications from "expo-notifications";
 import { NativeModules } from "react-native";
 
 const { BlockedApps } = NativeModules;
@@ -9,7 +8,6 @@ export type PermissionStatus = 'GRANTED' | 'DENIED' | 'UNDETERMINED';
 
 interface PermissionResult {
     location: PermissionStatus;
-    notifications: PermissionStatus;
     overlay: PermissionStatus;
     usageStats: PermissionStatus;
     allGranted: boolean;
@@ -25,15 +23,6 @@ export async function checkAllPermissions(): Promise<PermissionResult> {
     const { status: locStatus } = await Location.getBackgroundPermissionsAsync();
     results.location = locStatus === 'granted' ? 'GRANTED' : locStatus === 'denied' ? 'DENIED' : 'UNDETERMINED';
 
-    // 2. 알림 권한
-    let notifStatus: PermissionStatus = 'UNDETERMINED';
-    try {
-        const hasNotificationPermission = await BlockedApps.checkNotificationPermission();
-        results.notifications = hasNotificationPermission ? 'GRANTED' : 'DENIED';
-    } catch (e) {
-        console.error("Failed to check Notifications permission:", e);
-    }
-    results.notifications = notifStatus;
 
     // 3. 다른 앱 위에 표시 권한 (Overlay)
     try {
@@ -57,7 +46,6 @@ export async function checkAllPermissions(): Promise<PermissionResult> {
 
     const allGranted = (
         results.location === 'GRANTED' &&
-        results.notifications === 'GRANTED' &&
         results.overlay === 'GRANTED' &&
         results.usageStats === 'GRANTED'
     );
@@ -78,9 +66,6 @@ export async function requestPermission(type: keyof PermissionResult) {
             await Location.requestForegroundPermissionsAsync();
             // Background 요청
             return Location.requestBackgroundPermissionsAsync();
-        case 'notifications':
-            // Expo Notifications 요청
-            return Notifications.requestPermissionsAsync();
         case 'overlay':
             // 네이티브 모듈에서 설정 화면을 직접 엽니다.
             BlockedApps.requestOverlayPermission();
