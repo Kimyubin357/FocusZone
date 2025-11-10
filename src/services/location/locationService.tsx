@@ -1,6 +1,7 @@
 // src/services/location/locationService.tsx
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
+import * as Notifications from "expo-notifications"; // ⭐️ [추가]
 import * as TaskManager from "expo-task-manager";
 import { Alert, NativeModules } from "react-native";
 //노윤석 추가코드
@@ -16,6 +17,16 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../../../firebaseConfig";
 //노윤석 끝
+
+// ⭐️ [추가] Notification 설정
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
 // 네이티브 모듈 및 상수 정의
 const { BlockedApps } = NativeModules;
 const LOCATION_TASK_NAME = "background-location-task";
@@ -336,6 +347,7 @@ const processLocationUpdate = async (currentLocation: any) => {
     let isInsideAnyZone = false;
     let combinedBlockedApps = new Set<string>();
     const insidePlaceIds: string[] = [];
+    const insidePlaceNames: string[] = []; // ⭐️ [추가] 장소 이름 수집
 
     for (const place of activePlaces) {
       const distance = getDistance(
@@ -348,6 +360,7 @@ const processLocationUpdate = async (currentLocation: any) => {
       if (distance <= place.radius) {
         isInsideAnyZone = true;
         insidePlaceIds.push(place.id);
+        insidePlaceNames.push(place.name); // ⭐️ [추가] 이름 추가
 
         if (place.blockedApps && Array.isArray(place.blockedApps)) {
           place.blockedApps.forEach((app) => combinedBlockedApps.add(app));
@@ -406,6 +419,34 @@ const processLocationUpdate = async (currentLocation: any) => {
         appsToBlock.length,
         "개 앱"
       );
+
+      // ⭐️ [수정] Alert → Notification
+      if (newLockState === "LOCKED" && lastLockState.state !== "LOCKED") {
+        // UNLOCKED → LOCKED (새로 진입)
+        const placeName = insidePlaceNames[0] || "집중장소";
+
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "🔒 집중 모드 시작",
+            body: `"${placeName}"에 진입했습니다.\n${appsToBlock.length}개 앱이 차단됩니다.`,
+            sound: true,
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+          },
+          trigger: null, // 즉시 표시
+        });
+      } else if (newLockState === "UNLOCKED" && lastLockState.state === "LOCKED") {
+        // LOCKED → UNLOCKED (이탈)
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "🔓 집중 모드 종료",
+            body: "집중장소에서 벗어났습니다.\n앱 차단이 해제되었습니다.",
+            sound: true,
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+          },
+          trigger: null,
+        });
+      }
+
       await BlockedApps.setBlockedApps(isInsideAnyZone ? appsToBlock : []);
       await AsyncStorage.setItem(
         LOCK_STATE_KEY,
@@ -467,7 +508,12 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
  * 위치 추적 시작 함수 (UI에서 호출)
  */
 export const startLocationTask = async () => {
-  // ... (기존과 동일)
+  // ⭐️ [추가] Notification 권한 요청
+  const { status: notifStatus } = await Notifications.requestPermissionsAsync();
+  if (notifStatus !== "granted") {
+    console.warn("Notification permission not granted");
+  }
+
   const { status: foregroundStatus } =
     await Location.requestForegroundPermissionsAsync();
   if (foregroundStatus !== "granted") {
@@ -498,8 +544,10 @@ export const startLocationTask = async () => {
 
   await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
     accuracy: Location.Accuracy.BestForNavigation,
-    timeInterval: 3 * 1000, // 3초 (테스트용)
-    distanceInterval: 0, // 5미터 (테스트용)
+    timeInterval: 3000,
+    distanceInterval: 1,
+    deferredUpdatesInterval: 3000,
+    pausesUpdatesAutomatically: false,
     showsBackgroundLocationIndicator: true,
     foregroundService: {
       notificationTitle: "집중 모드",
@@ -507,7 +555,19 @@ export const startLocationTask = async () => {
       notificationColor: "#4A90E2",
     },
   });
-  console.log("Location tracking started.");
+  
+  console.log("✅ Location tracking started with 3s interval");
+  
+  // 시작 직후 즉시 한 번 실행
+  try {
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+    });
+    console.log("[startLocationTask] 📍 Initial location check");
+    await processLocationUpdate(location);
+  } catch (e) {
+    console.error("[startLocationTask] Initial update failed:", e);
+  }
 };
 
 /**
