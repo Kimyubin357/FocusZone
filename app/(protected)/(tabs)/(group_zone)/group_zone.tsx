@@ -80,7 +80,7 @@ function OfflineWarning({ onRetry }: { onRetry: () => void }) {
 }
 
 export default function GroupZone() {
-  const router = useRouter();
+ const router = useRouter();
   const [list, setList] = useState<GroupItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [myUid, setMyUid] = useState<string | null>(null);
@@ -352,25 +352,6 @@ export default function GroupZone() {
     return Math.min(Math.max(8, preferred), SCREEN_W - MENU_W - 8);
   })();
 
-  // 👈 [추가] 카드 클릭 핸들러
-  // const onPressCard = (item: GroupItem) => {
-  //   if (!myUid) return;
-
-  //   const isOwner = item.userId === myUid;
-
-  //   if (isOwner) {
-  //     // 그룹장일 경우: 상세 페이지로 이동
-  //     router.push({
-  //       pathname: `/(protected)/(tabs)/(group_zone)/${item.id}`,
-  //     });
-  //   } else {
-  //     // 그룹원일 경우: 내 통계 페이지로 이동
-  //     router.push({
-  //       pathname: `/(protected)/(tabs)/(group_zone)/stats/${item.id}`,
-  //     });
-  //   }
-  // };
-  //노윤석 추가코드
   const onPressCard = (item: GroupItem) => {
     const myUid = auth.currentUser?.uid;
     if (!myUid) {
@@ -432,7 +413,7 @@ export default function GroupZone() {
         }}
       />
 
-      {/* [수정] 헤더에 + 버튼과 지도 버튼 모두 배치 */}
+      {/* ✅ [수정] 온라인일 때만 헤더 버튼 표시 */}
       <View
         style={[
           styles.header,
@@ -445,29 +426,31 @@ export default function GroupZone() {
         <Text style={[styles.headerTitle, { color: colors.text }]}>
           그룹장소
         </Text>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity
-            onPress={goToAdd}
-            style={styles.headerButton}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="add-circle-outline" size={24} color={colors.tint} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={goToMap}
-            style={styles.headerButton}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="map-outline" size={24} color={colors.tint} />
-          </TouchableOpacity>
-        </View>
+        {isOnline && ( // ⭐️ 온라인일 때만 버튼 표시
+          <View style={styles.headerButtons}>
+            <TouchableOpacity
+              onPress={goToAdd}
+              style={styles.headerButton}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add-circle-outline" size={24} color={colors.tint} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={goToMap}
+              style={styles.headerButton}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="map-outline" size={24} color={colors.tint} />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {loading ? (
         <View style={styles.loader}>
           <ActivityIndicator />
         </View>
-      ) : !isOnline ? ( // ⭐️ 로딩이 끝났는데 오프라인이면 경고
+      ) : !isOnline ? (
         <OfflineWarning onRetry={NetInfo.fetch} />
       ) : (
         <FlatList

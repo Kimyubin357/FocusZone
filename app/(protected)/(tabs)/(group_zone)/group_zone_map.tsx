@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import BottomSheet, { BottomSheetFlatList } from "@gorhom/bottom-sheet";
+import { useNetInfo } from "@react-native-community/netinfo"; // ⭐️ 추가
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
@@ -39,7 +40,27 @@ export default function GroupZoneMap() {
   const mapRef = useRef<MapView>(null);
   const bottomSheetRef = useRef<BottomSheet>(null);
 
+  // ⭐️ [추가] 네트워크 상태 감지
+  const netInfo = useNetInfo();
+  const isOnline = netInfo.isConnected === true;
+
   const snapPoints = useMemo(() => ["5%", "50%", "90%"], []);
+
+  // ⭐️ [추가] 네트워크 끊기면 자동으로 이전 화면으로
+  useEffect(() => {
+    if (!isOnline && !loading) {
+      Alert.alert(
+        "네트워크 연결 끊김",
+        "지도 기능은 온라인 상태에서만 사용할 수 있습니다.",
+        [
+          {
+            text: "확인",
+            onPress: () => router.back(),
+          },
+        ]
+      );
+    }
+  }, [isOnline, loading, router]);
 
   const [groups, setGroups] = useState<GroupItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -290,7 +311,6 @@ export default function GroupZoneMap() {
             })}
         </MapView>
 
-        {/* ⭐️ [수정] map.tsx와 동일한 현재 위치 버튼 */}
         <TouchableOpacity
           style={styles.locationButton}
           onPress={getCurrentLocation}
@@ -338,11 +358,10 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
-  
-  // ⭐️ [수정] map.tsx와 동일한 스타일
+
   locationButton: {
     position: "absolute",
-    top: 60, // 검색바가 있다면 그 아래 위치
+    top: 60,
     right: 16,
     width: 46,
     height: 46,

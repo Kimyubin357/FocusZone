@@ -1,5 +1,6 @@
 // src/services/permissions/permissionChecker.tsx
 import * as Location from "expo-location";
+import * as Notifications from "expo-notifications";
 import { NativeModules } from "react-native";
 
 const { BlockedApps } = NativeModules;
@@ -8,13 +9,14 @@ export type PermissionStatus = 'GRANTED' | 'DENIED' | 'UNDETERMINED';
 
 interface PermissionResult {
     location: PermissionStatus;
+    notification: PermissionStatus;
     overlay: PermissionStatus;
     usageStats: PermissionStatus;
     allGranted: boolean;
 }
 
 /**
- * 4가지 필수 권한의 현재 상태를 확인합니다.
+ * 5가지 필수 권한의 현재 상태를 확인합니다.
  */
 export async function checkAllPermissions(): Promise<PermissionResult> {
     const results: Partial<PermissionResult> = {};
@@ -23,10 +25,17 @@ export async function checkAllPermissions(): Promise<PermissionResult> {
     const { status: locStatus } = await Location.getBackgroundPermissionsAsync();
     results.location = locStatus === 'granted' ? 'GRANTED' : locStatus === 'denied' ? 'DENIED' : 'UNDETERMINED';
 
+    // 2. 알림 권한
+    try {
+        const { status: notifStatus } = await Notifications.getPermissionsAsync();
+        results.notification = notifStatus === 'granted' ? 'GRANTED' : notifStatus === 'denied' ? 'DENIED' : 'UNDETERMINED';
+    } catch (e) {
+        console.error("Failed to check Notification permission:", e);
+        results.notification = 'UNDETERMINED';
+    }
 
     // 3. 다른 앱 위에 표시 권한 (Overlay)
     try {
-        // 네이티브 모듈 호출
         const hasOverlay = await BlockedApps.checkOverlayPermission();
         results.overlay = hasOverlay ? 'GRANTED' : 'DENIED';
     } catch (e) {
@@ -36,7 +45,6 @@ export async function checkAllPermissions(): Promise<PermissionResult> {
 
     // 4. 사용량 접근 권한 (Usage Stats)
     try {
-        // 네이티브 모듈 호출
         const hasUsageStats = await BlockedApps.checkUsageStatsPermission();
         results.usageStats = hasUsageStats ? 'GRANTED' : 'DENIED';
     } catch (e) {
@@ -46,6 +54,7 @@ export async function checkAllPermissions(): Promise<PermissionResult> {
 
     const allGranted = (
         results.location === 'GRANTED' &&
+        results.notification === 'GRANTED' &&
         results.overlay === 'GRANTED' &&
         results.usageStats === 'GRANTED'
     );
@@ -57,7 +66,7 @@ export async function checkAllPermissions(): Promise<PermissionResult> {
 }
 
 /**
- * 특정 권한을 요청하는 헬퍼 함수입니다. (UsageStats/Overlay는 설정 화면으로 리다이렉트)
+ * 특정 권한을 요청하는 헬퍼 함수입니다.
  */
 export async function requestPermission(type: keyof PermissionResult) {
     switch (type) {
@@ -66,10 +75,15 @@ export async function requestPermission(type: keyof PermissionResult) {
             await Location.requestForegroundPermissionsAsync();
             // Background 요청
             return Location.requestBackgroundPermissionsAsync();
+        
+        case 'notification':
+            return Notifications.requestPermissionsAsync();
+        
         case 'overlay':
             // 네이티브 모듈에서 설정 화면을 직접 엽니다.
             BlockedApps.requestOverlayPermission();
             break;
+        
         case 'usageStats':
             // 네이티브 모듈에서 설정 화면을 직접 엽니다.
             BlockedApps.requestUsageStatsPermission();
