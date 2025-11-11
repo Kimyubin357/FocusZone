@@ -27,6 +27,7 @@ import {
 } from "react-native";
 import MapView, { Circle, PROVIDER_GOOGLE, Region } from "react-native-maps";
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 2) TYPES
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,6 +82,7 @@ export default function FocusZoneScreen() {
     longitudeDelta: 0.008,
   });
 
+  const [isLoading, setIsLoading] = useState(false);
   // ───────────────────────────────────────────────────────────────────────────
   // 4) EFFECTS
   // ───────────────────────────────────────────────────────────────────────────
@@ -89,7 +91,7 @@ export default function FocusZoneScreen() {
       loadPlaces();
     }, [])
   );
-  
+
   useEffect(() => {
     (async () => {
       try {
@@ -118,6 +120,28 @@ export default function FocusZoneScreen() {
   // ───────────────────────────────────────────────────────────────────────────
   // 5) HELPERS
   // ───────────────────────────────────────────────────────────────────────────
+
+  // 👇 [추가] locationService.tsx에서 getDistance 함수 복사
+  const getDistance = (
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number
+  ) => {
+    const R = 6371e3;
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
+  };
+
   const animateTo = (
     lat: number,
     lng: number,
@@ -169,21 +193,99 @@ export default function FocusZoneScreen() {
   // ───────────────────────────────────────────────────────────────────────────
   // 6) HANDLERS
   // ───────────────────────────────────────────────────────────────────────────
-  const toggleAllActive = () => {
-    const isAnyActive = places.some(p => p.isActive);
-    const updated = places.map((p) => ({ ...p, isActive: !isAnyActive }));
-    savePlaces(updated);
+  const toggleAllActive = async () => {
+    if (isLoading) return; // 👈 [추가 1]
+    setIsLoading(true); // 👈 [추가 2]
+
+    try {
+      try {
+        // 3. [기존 로직] 버튼 누른 시점의 현재 위치 가져오기
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        const { latitude, longitude } = loc.coords;
+
+        if (latitude && longitude) {
+          const isInsideAnyPlace = places.some((p) => {
+            if (p.latitude && p.longitude && p.radius) {
+              const distance = getDistance(
+                latitude,
+                longitude,
+                p.latitude,
+                p.longitude
+              );
+              return distance <= p.radius;
+            }
+            return false;
+          });
+
+          if (isInsideAnyPlace) {
+            Alert.alert(
+              "변경 불가",
+              "하나 이상의 장소 내부에 있을 때는 전체 변경을 할 수 없습니다."
+            );
+            return; // 👈 함수 종료 (finally가 실행됨)
+          }
+        }
+      } catch (e) {
+        console.warn("Location check failed, allowing toggle all.", e);
+      }
+
+      // 4. [기존 로직] 외부일 경우 토글 실행
+      const isAnyActive = places.some((p) => p.isActive);
+      const updated = places.map((p) => ({ ...p, isActive: !isAnyActive }));
+      await savePlaces(updated); // await 추가
+    } finally {
+      setIsLoading(false); // 👈 [추가 3]
+    }
   };
 
-  const toggleSelection = (item: Place) => {
-    const updated = places.map((p) =>
-      p.id === item.id ? { ...p, isActive: !p.isActive } : p
-    );
-    savePlaces(updated);
-  };
+  const toggleSelection = async (item: Place) => {
+    if (isLoading) return; // 👈 [추가 1]
+    setIsLoading(true); // 👈 [추가 2]
 
-  const moveCameraToPlace = (p: Place) => {
-    animateTo(p.latitude, p.longitude, 0.01, 0.01);
+    try {
+      try {
+        // 3. [기존 로직] 버튼 누른 시점의 현재 위치 가져오기
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        const { latitude, longitude } = loc.coords;
+
+        if (
+          latitude &&
+          longitude &&
+          item.latitude &&
+          item.longitude &&
+          item.radius
+        ) {
+          const distance = getDistance(
+            latitude,
+            longitude,
+            item.latitude,
+            item.longitude
+          );
+
+          if (distance <= item.radius) {
+            Alert.alert(
+              "변경 불가",
+              "장소 내부에 있을 때는 활성화 상태를 변경할 수 없습니다."
+            );
+            return; // 👈 함수 종료 (finally가 실행됨)
+          }
+        }
+      } catch (e) {
+        console.warn("Location check failed, allowing toggle.", e);
+      }
+
+      // 4. [기존 로직] 외부일 경우 토글 실행
+      const updated = places.map((p) =>
+        p.id === item.id ? { ...p, isActive: !p.isActive } : p
+      );
+      await savePlaces(updated); // await 추가
+    } finally {
+      setIsLoading(false); // 👈 [추가 3]
+    }
   };
 
   const getCurrentLocation = async () => {
@@ -207,26 +309,140 @@ export default function FocusZoneScreen() {
     }
   };
 
-  const handleEdit = () => {
+  const handleEdit = async () => {
+    if (isLoading) return; // 👈 [추가 1]
     if (!selectedPlace) return;
-    closeMenu();
-    router.push({
-      pathname: "/(protected)/(tabs)/(focus_zone)/add",
-      params: {
-        editMode: "true",
-        placeId: selectedPlace.id,
-        name: selectedPlace.name,
-        address: selectedPlace.address,
-        latitude: String(selectedPlace.latitude),
-        longitude: String(selectedPlace.longitude),
-        radius: String(selectedPlace.radius),
-        blockedApps: JSON.stringify(selectedPlace.blockedApps || []),
-      },
-    });
+
+    setIsLoading(true); // 👈 [추가 2]
+
+    try {
+      try {
+        // 3. [기존 로직] 버튼 누른 시점의 현재 위치 가져오기
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        const { latitude, longitude } = loc.coords;
+
+        if (
+          latitude &&
+          longitude &&
+          selectedPlace.latitude &&
+          selectedPlace.longitude &&
+          selectedPlace.radius
+        ) {
+          const distance = getDistance(
+            latitude,
+            longitude,
+            selectedPlace.latitude,
+            selectedPlace.longitude
+          );
+
+          if (distance <= selectedPlace.radius) {
+            Alert.alert(
+              "변경 불가",
+              "장소 내부에 있을 때는 수정할 수 없습니다."
+            );
+            closeMenu();
+            return; // 👈 함수 종료 (finally가 실행됨)
+          }
+        }
+      } catch (e) {
+        console.warn("Location check failed, allowing edit.", e);
+      }
+
+      // 4. [기존 로직] 외부일 경우 수정 실행
+      closeMenu();
+      router.push({
+        pathname: "/(protected)/(tabs)/(focus_zone)/add",
+        params: {
+          editMode: "true",
+          placeId: selectedPlace.id,
+          name: selectedPlace.name,
+          address: selectedPlace.address,
+          latitude: String(selectedPlace.latitude),
+          longitude: String(selectedPlace.longitude),
+          radius: String(selectedPlace.radius),
+          blockedApps: JSON.stringify(selectedPlace.blockedApps || []),
+        },
+      });
+    } finally {
+      setIsLoading(false); // 👈 [추가 3]
+    }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
+    if (isLoading) return; // 👈 [추가 1]
     if (!selectedPlace) return;
+
+    setIsLoading(true); // 👈 [추가 2]
+
+    try {
+      // 3. [기존 로직] 버튼 누른 시점의 현재 위치 가져오기
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const { latitude, longitude } = loc.coords;
+
+      if (
+        latitude &&
+        longitude &&
+        selectedPlace.latitude &&
+        selectedPlace.longitude &&
+        selectedPlace.radius
+      ) {
+        const distance = getDistance(
+          latitude,
+          longitude,
+          selectedPlace.latitude,
+          selectedPlace.longitude
+        );
+
+        if (distance <= selectedPlace.radius) {
+          Alert.alert(
+            "삭제 불가",
+            "장소 내부에 있을 때는 삭제할 수 없습니다."
+          );
+          closeMenu();
+          setIsLoading(false); // 👈 [추가 3a] - 경고 시 로딩 해제
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("Location check failed, allowing delete.", e);
+    }
+
+    // 4. [기존 로직] 외부일 경우 삭제 Alert 표시
+    closeMenu();
+    Alert.alert(
+      "삭제 확인",
+      `"${selectedPlace.name}"를 삭제하시겠습니까?`,
+      [
+        {
+          text: "취소",
+          style: "cancel",
+          onPress: () => setIsLoading(false), // 👈 [추가 3b] - 취소 시 로딩 해제
+        },
+        {
+          text: "삭제",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const updated = places.filter(
+                (p) => p.id !== selectedPlace!.id // selectedPlace는 위에서 !null 체크됨
+              );
+              await savePlaces(updated);
+              setSelectedPlace(null);
+            } catch (e) {
+              console.error("Delete failed", e);
+            } finally {
+              setIsLoading(false); // 👈 [추가 3c] - 삭제 완료 시 로딩 해제
+            }
+          },
+        },
+      ]
+    );
+
+    // 4. [기존 로직] 외부일 경우 삭제 실행
     closeMenu();
     Alert.alert("삭제 확인", `"${selectedPlace.name}"를 삭제하시겠습니까?`, [
       { text: "취소", style: "cancel" },
@@ -382,7 +598,7 @@ export default function FocusZoneScreen() {
               <Text style={styles.countText}>
                 {places.filter((p) => p.isActive).length}/{places.length}
               </Text>
-              
+
               <TouchableOpacity
                 style={styles.toggleButton}
                 onPress={toggleAllActive}
@@ -487,15 +703,15 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   title: { fontSize: 18, fontWeight: "bold", color: "#222" },
-  
+
   headerButtons: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  countText: { 
-    fontSize: 14, 
-    color: "#6B7280", 
+  countText: {
+    fontSize: 14,
+    color: "#6B7280",
     fontWeight: "600",
     marginRight: 4,
   },
@@ -553,9 +769,9 @@ const styles = StyleSheet.create({
   },
 
   // ⭐️ [수정] group_zone과 동일한 메뉴 스타일
-  menuBackdrop: { 
-    flex: 1, 
-    backgroundColor: "rgba(0,0,0,0.2)" 
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.2)"
   },
   menuBox: {
     backgroundColor: "#fff",
@@ -567,19 +783,19 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  menuItem: { 
-    paddingVertical: 12, 
-    paddingHorizontal: 16 
+  menuItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16
   },
-  menuText: { 
+  menuText: {
     fontSize: 14,
     color: "#222",
   },
-  menuDanger: { 
+  menuDanger: {
     color: "#DC2626",
-    fontWeight: "700" 
+    fontWeight: "700"
   },
-  menuDivider: { 
+  menuDivider: {
     height: 1,
     backgroundColor: "#E5E7EB",
   },
