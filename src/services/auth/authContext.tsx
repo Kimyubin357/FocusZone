@@ -99,7 +99,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setIsLoggedIn(true); //상태값을 변경하고
     setUser(userData);
     storeAuthState({ isLoggedIn: true, user: userData });
-    router.replace("/(protected)/(tabs)/(focus_zone)");//페이지 라우터 변경
   }
   const logOut = async () => {
     try {
@@ -123,9 +122,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
     // 3. React 상태 업데이트
     setIsLoggedIn(false);
     setUser(undefined);
-
-    // 4. 로그인 페이지로 이동
-    router.replace("/(auth)/login_main");
   };
 
   //auth context를 사용해서 모든 하위 컴포넌트에 상태를 전달하는 역할을 함

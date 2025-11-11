@@ -5,6 +5,7 @@ interface Props {
   title: string;//버튼에 들어갈 글자
   backgroundColor: string;//버튼 색
   textColor?: string;//글자 색
+  disabled?: boolean;
   onPress: () => void;
 }
 
@@ -12,6 +13,7 @@ const Button: React.FC<Props> = ({
   title,
   backgroundColor,
   textColor = 'white',
+  disabled = false,
   onPress,
 }) => {
   return (

@@ -1,4 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 스플래시 화면의 배경 색상 정의 (원하는 색상으로 변경 가능) -->
-    <color name="splashscreen_background">#FFFFFF</color>
+    <color name="iconBackground">#FFFFFF</color>
+    <color name="colorPrimary">#023c69</color>
+    <color name="colorPrimaryDark">#ffffff</color>
+    <color name="splashscreen_background">#ffffff</color>
 </resources>

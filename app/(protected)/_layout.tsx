@@ -1,7 +1,7 @@
 import { AuthContext } from "@/src/services/auth/authContext";
-import { Redirect, Stack, useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useContext, useEffect, useRef, useState } from "react";
-import { AppState } from "react-native";
+import { ActivityIndicator, AppState, View } from "react-native";
 
 import { startLocationTask } from "@/src/services/location/locationService";
 import { startSync } from "@/src/services/location/locationSyncService";
@@ -16,8 +16,6 @@ export default function ProtectedLayout() {
 
     useEffect(() => {
         const verifyPermissions = async () => {
-            if (!authState.isReady) return;
-            if (!authState.isLoggedIn) return;
 
             // ✅ 로그인된 상태에서만 권한 체크 시작
             const result = await checkAllPermissions();
@@ -27,16 +25,23 @@ export default function ProtectedLayout() {
                 return;
             }
 
-            // ✅ 권한 모두 OK → 서비스 시작
-            startSync();
-            await new Promise(r => setTimeout(r, 3000));
-            startLocationTask();
-
-            // ✅ 권한 체크 완료
             setPermissionChecked(true);
+
+            // ✅ [수정] 서비스 시작은 백그라운드에서 비동기로 수행
+            //        (이 함수를 기다릴 필요 없음)
+            const startServices = async () => {
+                startSync();
+                // 3초 딜레이가 꼭 필요했다면 여기에 두되, 
+                // setPermissionChecked(true) 보다는 뒤에 있어야 합니다.
+                await new Promise(r => setTimeout(r, 3000));
+                startLocationTask();
+            };
+            startServices();
         };
 
-        verifyPermissions();
+        if (authState.isReady && authState.isLoggedIn) {
+            verifyPermissions();
+        }
 
         const sub = AppState.addEventListener("change", async (nextState) => {
             if (
@@ -60,24 +65,21 @@ export default function ProtectedLayout() {
         return () => sub.remove();
     }, [authState.isReady, authState.isLoggedIn]);
 
-    // ✅ 로그인 준비 안 됨 → 아무것도 렌더링 X
-    if (!authState.isReady) return null;
 
-    // ✅ 로그인 안 됨 → 로그인 페이지
-    if (!authState.isLoggedIn) {
-        return <Redirect href="/login_main" />;
+    if (!permissionChecked) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" />
+            </View>
+        );
     }
 
-    // ✅ 권한 체크 완료 전까진 공간 유지
-    if (!permissionChecked) return null;
-
+    // ✅ 권한 체크 완료 시에만 (tabs) 렌더링
     return (
         <Stack>
             <Stack.Screen
                 name="(tabs)"
-                options={{
-                    headerShown: false,
-                }}
+                options={{ headerShown: false }}
             />
         </Stack>
     )

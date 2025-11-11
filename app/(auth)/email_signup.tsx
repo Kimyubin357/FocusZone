@@ -1,3 +1,4 @@
+// app/(auth)/email_signup.tsx
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { createUserWithEmailAndPassword } from "firebase/auth";

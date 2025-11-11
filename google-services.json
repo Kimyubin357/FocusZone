@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "374303258798",
+    "firebase_url": "https://focuszone-568cc-default-rtdb.firebaseio.com",
+    "project_id": "focuszone-568cc",
+    "storage_bucket": "focuszone-568cc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:374303258798:android:fdff63af7551d192a3953f",
+        "android_client_info": {
+          "package_name": "com.focuszone"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "374303258798-jb4uvb1qb931ub00jntaod88509e2h5j.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.focuszone",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "374303258798-c1n9868e16b8j6sjasprocguoltpgaj6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB_YQQGrleSkuVeKP79JTN0vSNTobmbHug"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "374303258798-c1n9868e16b8j6sjasprocguoltpgaj6.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
