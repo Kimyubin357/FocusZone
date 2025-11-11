@@ -1,7 +1,4 @@
 // app/(protected)/(tabs)/(group_zone)/add.tsx — Minimal theming (preserve all UI/logic)
-
-
-
 import { Ionicons } from "@expo/vector-icons";
 
 // ⭐️ 1. [추가] useFocusEffect, useIsFocused, useCallback 임포트
@@ -661,23 +658,14 @@ export default function AddGroupPlace() {
         </Text>
 
         <TouchableOpacity onPress={onSave} disabled={saving || loadingDoc}>
-
           <Text
-
             style={[
-
               styles.headerAction,
-
               { color: saving || loadingDoc ? colors.muted : colors.tint },
-
             ]}
-
           >
-
             {saving ? "저장중..." : "저장"}
-
           </Text>
-
         </TouchableOpacity>
 
       </View>

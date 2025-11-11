@@ -22,6 +22,7 @@ export default function AddFocusPlace() {
 
   const isFocused = useIsFocused();
   const isEditMode = params.editMode === "true";
+
   const placeId = params.placeId as string | undefined;
 
   // ✅ 이름은 사용자가 타이핑한 값 유지가 중요하니 최초 한 번만 초기화
@@ -51,6 +52,23 @@ export default function AddFocusPlace() {
     }
     return []; // 새 장소 등록 시에는 빈 배열로 시작
   });
+  const [isSaving, setIsSaving] = useState(false);
+
+   const colors = {
+
+    background: "#FFFFFF",
+
+    card: "#F8F8F8",
+
+    text: "#111111",
+
+    muted: "#777777",
+
+    tint: "#0D4093",
+
+    border: "#E0E0E0",
+
+  };
 
   // ✅ 포커스될 때 지도에서 저장해 둔 임시값(draft) 반영
   useFocusEffect(
@@ -136,6 +154,8 @@ export default function AddFocusPlace() {
   };
 
   const onSave = async () => {
+    if (isSaving) return;
+
     if (!name.trim()) {
       Alert.alert("오류", "집중장소명을 입력해주세요.");
       return;
@@ -149,6 +169,8 @@ export default function AddFocusPlace() {
       Alert.alert("오류", "위치를 선택해주세요.");
       return;
     }
+
+    setIsSaving(true);
 
     try {
       const savedPlaces = await AsyncStorage.getItem("personalFocusPlaces");
@@ -183,22 +205,25 @@ export default function AddFocusPlace() {
         };
         places.push(newPlace);
       }
-      
+
       // 저장
       await AsyncStorage.setItem("personalFocusPlaces", JSON.stringify(places));
       await clearDraft();
-      
+
       // 위치 태스크 강제 업데이트
       console.log('[Add] 🔄 Triggering force update...');
       await forceLocationTaskUpdate();
       console.log('[Add] ✅ Force update completed');
-      
+
       // ⭐️ [수정] Alert 제거하고 바로 이동
       router.replace("/(protected)/(tabs)/(focus_zone)"); // ← 또는 router.back()
-      
+
     } catch (error) {
       console.error('[Add] ❌ Save error:', error);
       Alert.alert("오류", "저장에 실패했습니다.");
+    } finally {
+      // 👇 [추가 3] 성공/실패 여부와 관계없이 저장 상태 해제
+      setIsSaving(false);
     }
   };
 
@@ -211,8 +236,18 @@ export default function AddFocusPlace() {
         <Text style={styles.headerTitle}>
           {isEditMode ? "집중장소 수정" : "집중장소 등록"}
         </Text>
-        <TouchableOpacity onPress={onSave}>
-          <Text style={[styles.headerAction, { color: "#2563EB" }]}>저장</Text>
+        <TouchableOpacity
+          onPress={onSave}
+          disabled={isSaving} // 👈 [추가]
+        >
+          <Text
+            style={[
+              styles.headerAction,
+              { color: isSaving ? colors.muted : colors.tint },
+            ]}
+          >
+            {isSaving ? "저장중..." : "저장"}
+          </Text>
         </TouchableOpacity>
       </View>
 
