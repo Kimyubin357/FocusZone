@@ -45,7 +45,7 @@ let firestoreUnsubscribe: () => void | undefined;
 /**
  * Firestore 문서를 'Place' 객체로 변환
  */
-const transformDocToPlace = (doc: DocumentData): Place | null => {
+const transformDocToPlace = (doc: DocumentData, currentUserId: string): Place | null => {
     const data = doc.data();
 
     if (
@@ -59,6 +59,34 @@ const transformDocToPlace = (doc: DocumentData): Place | null => {
         return null;
     }
 
+    // 🚨 [핵심 수정] 차단 정책(Policy) 기반으로 'isActive' 결정
+    const globalIsActive = data.isActive ?? false;
+    const blockingPolicy = data.blockingPolicy; // "MEMBERS_ONLY" | "ALL_PARTICIPANTS"
+    const ownerId = data.ownerId;
+
+    let finalIsActive = globalIsActive; // 기본값은 DB에 저장된 global 활성화 상태
+
+    if (globalIsActive) {
+        // 장소가 활성화 상태일 때만 세부 정책 검사
+        if (blockingPolicy === 'MEMBERS_ONLY') {
+            if (currentUserId === ownerId) {
+                // 정책이 '멤버만'이고 현재 유저가 '소유자'이면,
+                // 이 유저에겐 비활성화 (차단 안 함)
+                finalIsActive = false;
+            } else {
+                // 정책이 '멤버만'이고 현재 유저가 '멤버'이면,
+                // 이 유저에겐 활성화 (차단 함)
+                finalIsActive = true;
+            }
+        } else if (blockingPolicy === 'ALL_PARTICIPANTS') {
+            // 정책이 '모두'이면, 소유자 여부와 관계없이 활성화 (차단 함)
+            finalIsActive = true;
+        }
+        // (else: 정책이 없거나 다른 값이면? globalIsActive 값을 그대로 사용)
+        
+    }
+    // (globalIsActive가 false면, 정책과 상관없이 finalIsActive는 false)
+
     return {
         id: doc.id,
         name: data.groupName,
@@ -66,9 +94,7 @@ const transformDocToPlace = (doc: DocumentData): Place | null => {
         latitude: data.latitude,
         longitude: data.longitude,
         radius: data.radius,
-        // 🚨 [핵심 수정] data.activate -> data.isActive
-        isActive: data.isActive ?? false, // 👈 DB의 'isActive' 필드 참조
-        // (아직 번역 전) 카테고리 목록
+        isActive: finalIsActive, // 👈 [수정 2] 정책이 적용된 최종 값 사용
         blockedApps: data.blockedAppCategories ?? [],
     };
 };
@@ -132,7 +158,7 @@ const setupFirestoreListener = (user: User) => {
                 const placesWithCategories: Place[] = [];
                 snapshot.forEach((doc) => {
                     // 🚨 [수정 1] 'isActive'가 올바르게 설정됨
-                    const place = transformDocToPlace(doc);
+                    const place = transformDocToPlace(doc, uid);
                     if (place) {
                         placesWithCategories.push(place);
                     }
