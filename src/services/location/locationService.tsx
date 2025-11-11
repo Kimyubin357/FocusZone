@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
+import * as Notifications from "expo-notifications";
 import * as TaskManager from "expo-task-manager";
 import { Alert, NativeModules } from "react-native";
 //노윤석 추가코드
@@ -15,6 +16,17 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../../../firebaseConfig";
 //노윤석 끝
+// ⭐️ [추가] Notification 설정
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
 // 네이티브 모듈 및 상수 정의
 const { BlockedApps } = NativeModules;
 const LOCATION_TASK_NAME = "background-location-task";
@@ -380,6 +392,9 @@ const processLocationUpdate = async (currentLocation: any) => {
         let isInsideAnyZone = false;
         let combinedBlockedApps = new Set<string>();
         const insidePlaceIds: string[] = [];
+        const insidePlaceNames: string[] = []; // ⭐️ [추가] 장소 이름 수집
+
+
 
         for (const place of activePlaces) {
             const distance = getDistance(
@@ -392,6 +407,7 @@ const processLocationUpdate = async (currentLocation: any) => {
             if (distance <= place.radius) {
                 isInsideAnyZone = true;
                 insidePlaceIds.push(place.id);
+                insidePlaceNames.push(place.name); 
 
                 if (place.blockedApps && Array.isArray(place.blockedApps)) {
                     place.blockedApps.forEach((app) => combinedBlockedApps.add(app));
@@ -450,6 +466,33 @@ const processLocationUpdate = async (currentLocation: any) => {
                 appsToBlock.length,
                 "개 앱"
             );
+
+      // ⭐️ [수정] Alert → Notification
+      if (newLockState === "LOCKED" && lastLockState.state !== "LOCKED") {
+        // UNLOCKED → LOCKED (새로 진입)
+        const placeName = insidePlaceNames[0] || "집중장소";
+
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "🔒 집중 모드 시작",
+            body: `"${placeName}"에 진입했습니다.\n${appsToBlock.length}개 앱이 차단됩니다.`,
+            sound: true,
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+          },
+          trigger: null, // 즉시 표시
+        });
+      } else if (newLockState === "UNLOCKED" && lastLockState.state === "LOCKED") {
+        // LOCKED → UNLOCKED (이탈)
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "🔓 집중 모드 종료",
+            body: "집중장소에서 벗어났습니다.\n앱 차단이 해제되었습니다.",
+            sound: true,
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+          },
+          trigger: null,
+        });
+      }
             // 네이티브 모듈에 차단 목록 전달. 네이티브 서비스(AppLockService.kt)가 이를 사용해 앱 차단 로직 실행.
             await BlockedApps.setBlockedApps(isInsideAnyZone ? appsToBlock : []);
             await AsyncStorage.setItem(
@@ -514,6 +557,11 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
 
 export const startLocationTask = async () => {
     // ✅ 가장 먼저 추적 상태 확인
+     // ⭐️ [추가] Notification 권한 요청
+  const { status: notifStatus } = await Notifications.requestPermissionsAsync();
+  if (notifStatus !== "granted") {
+    console.warn("Notification permission not granted");
+  }
     const isTracking = await Location.hasStartedLocationUpdatesAsync(
         LOCATION_TASK_NAME
     );
