@@ -30,6 +30,7 @@ type GroupLocationDetails = {
   blockedAppsCount?: number;
   memberIds?: string[];
   isActive?: boolean; // [추가]
+  ownerId: string;
 };
 
 // [추가] 멤버 데이터 타입
@@ -96,6 +97,7 @@ export default function GroupZoneDetails() {
             blockedAppsCount: data.blockedAppCategories?.length ?? 0,
             memberIds: data.memberIds ?? [],
             isActive: data.isActive ?? true, // 실시간으로 갱신됨
+            ownerId: data.ownerId ?? "",
           });
         } else {
           // 문서가 삭제되었거나 없는 경우
@@ -119,7 +121,8 @@ export default function GroupZoneDetails() {
 
   // [추가] Effect 2: 멤버 리스트 실시간 리스너 설정
   useEffect(() => {
-    if (!groupId) return;
+    // 🚨 [수정] details가 로드된 후에만 실행
+    if (!groupId || !details) return; 
 
     const membersColRef = collection(
       db,
@@ -133,9 +136,16 @@ export default function GroupZoneDetails() {
       const away: GroupMember[] = [];
 
       snapshot.forEach((doc) => {
+        const memberId = doc.id; // 문서 ID가 유저의 UID임
+
+        // 🚨 [수정] 그룹장(ownerId)이면 리스트에 추가하지 않고 건너뜀
+        if (memberId === details.ownerId) {
+          return;
+        }
+
         const data = doc.data();
         const member: GroupMember = {
-          id: doc.id, // 문서 ID가 유저의 UID임
+          id: memberId,
           nickname: data.groupNickname ?? "이름 없음", // DB 필드명: groupNickname
         };
 
@@ -156,7 +166,7 @@ export default function GroupZoneDetails() {
     return () => {
       unsubscribe();
     };
-  }, [groupId]); // groupId가 변경될 때만 이 Effect 실행
+  }, [groupId, details]); // 👈 [수정] details를 의존성 배열에 추가
 
   //노윤석 추가코드
   // Expo Router: 문자열 href로 안전하게 이동 (타입 경고 방지)

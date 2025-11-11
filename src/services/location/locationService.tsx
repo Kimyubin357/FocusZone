@@ -132,6 +132,47 @@ const upsertGroupDayDocOnExit = async ({
         }
     });
 };
+
+const updateMemberStatus = async (
+    placeId: string, // placeId가 이 컨텍스트에서는 groupId입니다.
+    uid: string,
+    status: "active" | "inactive"
+) => {
+    if (!uid || !placeId) {
+        console.warn("[STATS] updateMemberStatus: uid 또는 placeId가 없습니다.");
+        return;
+    }
+
+    try {
+        // 1. [추가] 그룹장(ownerId)인지 확인하기 위해 부모 문서를 가져옵니다.
+        const groupDocRef = doc(db, "groupLocations", placeId);
+        const groupDocSnap = await getDoc(groupDocRef);
+
+        if (!groupDocSnap.exists()) {
+            console.warn(`[STATS] updateMemberStatus: 그룹 문서 ${placeId}를 찾을 수 없습니다.`);
+            return;
+        }
+
+        const ownerId = groupDocSnap.data()?.ownerId;
+
+        // 2. [추가] 현재 사용자가 그룹장이면, status 업데이트를 건너뜁니다.
+        if (uid === ownerId) {
+            console.log(`[STATS] 사용자가 그룹장(${uid})이므로 status 업데이트를 건너뜁니다.`);
+            return; 
+        }
+
+        // 3. [기존 로직] 그룹장이 아닌 멤버만 status를 업데이트합니다.
+        const memberRef = doc(db, "groupLocations", placeId, "members", uid);
+        
+        await setDoc(memberRef, {
+            status: status,
+        }, { merge: true });
+
+        console.log(`[STATS] Member ${uid} status in ${placeId} updated to ${status}`);
+    } catch (e) {
+        console.error(`[STATS] Failed to update member status for ${uid} in ${placeId}`, e);
+    }
+};
 //노윤석 끝
 function toYMD(date: Date) {
     const y = date.getFullYear();
@@ -162,6 +203,8 @@ export async function statsLogEnter({
         const authedUid = auth?.currentUser?.uid ?? userId;
         if (authedUid && authedUid !== "local" && (await isGroupPlace(placeId))) {
             await upsertGroupDayDocOnEnter({ placeId, uid: authedUid, startedAt });
+            // 👇 [신규] 멤버 상태 "active"로 변경
+            await updateMemberStatus(placeId, authedUid, "active");
         }
         //노윤석 끝
     } catch (e) {
@@ -211,6 +254,8 @@ export async function statsLogExit({
                 startedAt,
                 endedAt,
             });
+            // 👇 [신규] 멤버 상태 "inactive"로 변경
+            await updateMemberStatus(placeId, authedUid, "inactive");
         }
         //노윤석 끝
     } catch (e) {

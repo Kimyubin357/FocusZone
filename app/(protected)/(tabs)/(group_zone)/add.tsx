@@ -428,7 +428,7 @@ export default function AddGroupPlace() {
 
           longitude: longitude ?? null,
 
-          radius: Number(radius) ,
+          radius: Number(radius),
 
           activeDays: activeDays.sort((a, b) => a - b),
 
@@ -460,9 +460,11 @@ export default function AddGroupPlace() {
         // 5. 'members' 서브 컬렉션에 그룹장 정보 저장
 
         const memberRef = doc(
-
-          collection(db, "groupLocations", newGroupRef.id, "members")
-
+          db,
+          "groupLocations",
+          newGroupRef.id,
+          "members",
+          user.uid // 👈 여기에 uid를 전달
         );
 
         // (선택) user 프로필에서 displayName 가져오기
@@ -470,10 +472,7 @@ export default function AddGroupPlace() {
         const userProfileSnap = await getDoc(doc(db, "users", user.uid));
 
         const displayName =
-
-          userProfileSnap.data()?.displayName ?? user.displayName ?? "그룹장";
-
-
+          userProfileSnap.data()?.nickname ?? user.displayName ?? "그룹장";
 
         batch.set(memberRef, {
 
@@ -484,8 +483,6 @@ export default function AddGroupPlace() {
           groupNickname: displayName,
 
           joinedAt: serverTimestamp(),
-
-          status: "inactive" // 초기 상태
 
         });
 
