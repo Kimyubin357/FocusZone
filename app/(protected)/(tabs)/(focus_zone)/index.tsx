@@ -563,9 +563,9 @@ export default function FocusZoneScreen() {
             center={{ latitude: p.latitude, longitude: p.longitude }}
             radius={p.radius || 400}
             strokeWidth={2}
-            strokeColor={p.isActive ? "#22C55E" : "#9CA3AF"}
+            strokeColor={p.isActive ? "#0D4093" : "#9CA3AF"}
             fillColor={
-              p.isActive ? "rgba(34,197,94,0.2)" : "rgba(156,163,175,0.2)"
+              p.isActive ? "rgba(13,64,147,0.2)" : "rgba(156,163,175,0.2)"
             }
           />
         ))}
