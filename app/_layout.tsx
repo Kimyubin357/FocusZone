@@ -40,7 +40,11 @@ function AuthGuardAndLayout() {
 
     const inAuthGroup = segments[0] === '(auth)';
 
-    if (isLoggedIn && inAuthGroup) {
+    const allowedAuthScreens = ['email_forget_pwd'];
+
+    const currentScreen = segments[1];
+
+    if (isLoggedIn && inAuthGroup && !allowedAuthScreens.includes(currentScreen)) {
       // 3. 로그인 됨 + (auth) 그룹에 있음 (e.g., 로그인/가입 화면)
       //    -> (protected)로 강제 이동
       router.replace('/(protected)/(tabs)/(focus_zone)');

@@ -1,7 +1,19 @@
 import { checkAllPermissions, requestPermission } from "@/src/services/permissions/permissionChecker";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+// ✅ Ionicons import 추가
+import { Ionicons } from "@expo/vector-icons";
+
+// ✅ 앱 테마 색상 정의
+const THEME_COLOR = "#0D4093";
 
 export default function PermissionScreen() {
   const router = useRouter();
@@ -29,37 +41,38 @@ export default function PermissionScreen() {
   if (!perm) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4A90E2" />
+        <ActivityIndicator size="large" color={THEME_COLOR} />
         <Text style={styles.loadingText}>권한 상태 확인 중...</Text>
       </View>
     );
   }
 
+  // ✅ [수정] Icon 이모지를 Ionicons 이름으로 변경
   const permissions = [
     {
       key: "location",
-      icon: "📍",
+      icon: "location-outline",
       title: "위치 권한",
       description: "집중 장소를 자동으로 감지합니다",
       granted: perm.location === "GRANTED",
     },
     {
       key: "notification",
-      icon: "🔔",
+      icon: "notifications-outline",
       title: "알림 권한",
       description: "집중 모드 상태를 알려드립니다",
       granted: perm.notification === "GRANTED",
     },
     {
       key: "overlay",
-      icon: "🔒",
+      icon: "lock-closed-outline",
       title: "다른 앱 위에 표시",
       description: "집중 시간에 앱을 차단합니다",
       granted: perm.overlay === "GRANTED",
     },
     {
       key: "usageStats",
-      icon: "📊",
+      icon: "stats-chart-outline",
       title: "사용량 접근 권한",
       description: "현재 사용 중인 앱을 확인합니다",
       granted: perm.usageStats === "GRANTED",
@@ -70,10 +83,19 @@ export default function PermissionScreen() {
   const progress = (grantedCount / permissions.length) * 100;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+    >
       {/* 헤더 */}
       <View style={styles.header}>
-        <Text style={styles.emoji}>🎯</Text>
+        {/* ✅ [수정] 이모지를 Ionicons로 변경 및 스타일 적용 */}
+        <Ionicons
+          name="shield-checkmark-outline"
+          size={56}
+          color={THEME_COLOR}
+          style={styles.headerIcon}
+        />
         <Text style={styles.title}>Focus Zone 시작하기</Text>
         <Text style={styles.subtitle}>
           원활한 사용을 위해{"\n"}아래 권한을 허용해주세요
@@ -83,6 +105,7 @@ export default function PermissionScreen() {
       {/* 진행률 바 */}
       <View style={styles.progressContainer}>
         <View style={styles.progressBar}>
+          {/* ✅ [수정] progressFill 스타일의 backgroundColor를 THEME_COLOR로 변경 */}
           <View style={[styles.progressFill, { width: `${progress}%` }]} />
         </View>
         <Text style={styles.progressText}>
@@ -101,7 +124,7 @@ export default function PermissionScreen() {
             granted={permission.granted}
             onPress={async () => {
               if (permission.granted) return;
-              
+
               if (permission.key === "overlay" || permission.key === "usageStats") {
                 requestPermission(permission.key);
                 setTimeout(load, 2000);
@@ -134,8 +157,15 @@ function PermissionCard({ icon, title, description, granted, onPress, loading })
       activeOpacity={0.7}
     >
       <View style={styles.cardLeft}>
-        <View style={[styles.iconContainer, granted && styles.iconContainerGranted]}>
-          <Text style={styles.icon}>{icon}</Text>
+        <View
+          style={[styles.iconContainer, granted && styles.iconContainerGranted]}
+        >
+          {/* ✅ [수정] Text 이모지를 Ionicons 컴포넌트로 변경 */}
+          <Ionicons
+            name={icon}
+            size={24}
+            color={granted ? THEME_COLOR : "#6B7280"}
+          />
         </View>
         <View style={styles.cardContent}>
           <Text style={[styles.cardTitle, granted && styles.cardTitleGranted]}>
@@ -148,11 +178,13 @@ function PermissionCard({ icon, title, description, granted, onPress, loading })
       <View style={styles.cardRight}>
         {granted ? (
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>✓</Text>
+            {/* ✅ [수정] Text "✓"를 Ionicons로 변경 */}
+            <Ionicons name="checkmark-outline" size={18} color="white" />
           </View>
         ) : (
           <View style={styles.arrowButton}>
-            <Text style={styles.arrowText}>→</Text>
+            {/* ✅ [수정] Text "→"를 Ionicons로 변경 */}
+            <Ionicons name="arrow-forward-outline" size={18} color="white" />
           </View>
         )}
       </View>
@@ -186,10 +218,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 32,
   },
-  emoji: {
-    fontSize: 56,
+  // ✅ [추가] 헤더 아이콘 스타일
+  headerIcon: {
     marginBottom: 16,
   },
+  // ✅ [삭제] emoji 스타일 제거
   title: {
     fontSize: 28,
     fontWeight: "700",
@@ -216,7 +249,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: "100%",
-    backgroundColor: "#4A90E2",
+    backgroundColor: THEME_COLOR, // ✅ [수정] 테마 색상으로 변경
     borderRadius: 4,
   },
   progressText: {
@@ -246,8 +279,8 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
   },
   cardGranted: {
-    backgroundColor: "#F0F9FF",
-    borderColor: "#BAE6FD",
+    backgroundColor: "#E9EFFF", // ✅ [수정] 테마에 맞는 연한 파란색
+    borderColor: THEME_COLOR, // ✅ [수정] 테마 색상 테두리
   },
   cardLeft: {
     flexDirection: "row",
@@ -264,11 +297,9 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   iconContainerGranted: {
-    backgroundColor: "#DBEAFE",
+    backgroundColor: "#D6DFFF", // ✅ [수정] 테마에 맞는 아이콘 배경
   },
-  icon: {
-    fontSize: 24,
-  },
+  // ✅ [삭제] icon 스타일 제거
   cardContent: {
     flex: 1,
   },
@@ -279,7 +310,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   cardTitleGranted: {
-    color: "#1E40AF",
+    color: THEME_COLOR, // ✅ [수정] 테마 색상
   },
   cardDescription: {
     fontSize: 13,
@@ -293,39 +324,31 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#10B981",
+    backgroundColor: "#10B981", // ✅ [유지] 초록색 (허용됨)
     justifyContent: "center",
     alignItems: "center",
   },
-  badgeText: {
-    color: "white",
-    fontSize: 18,
-    fontWeight: "700",
-  },
+  // ✅ [삭제] badgeText 스타일 제거
   arrowButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#4A90E2",
+    backgroundColor: THEME_COLOR, // ✅ [수정] 테마 색상
     justifyContent: "center",
     alignItems: "center",
   },
-  arrowText: {
-    color: "white",
-    fontSize: 18,
-    fontWeight: "700",
-  },
+  // ✅ [삭제] arrowText 스타일 제거
 
   // 하단
   footer: {
     marginTop: 32,
     padding: 16,
-    backgroundColor: "#FEF3C7",
+    backgroundColor: "#E9EFFF", // ✅ [수정] 테마에 맞는 연한 파란색
     borderRadius: 12,
   },
   footerText: {
     fontSize: 14,
-    color: "#92400E",
+    color: THEME_COLOR, // ✅ [수정] 테마 색상
     textAlign: "center",
     lineHeight: 20,
   },

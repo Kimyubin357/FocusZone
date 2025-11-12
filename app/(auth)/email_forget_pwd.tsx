@@ -3,17 +3,17 @@ import { useRouter } from 'expo-router';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Keyboard,
-    KeyboardAvoidingView,
-    Platform,
-    StatusBar, // ✅ react-native의 StatusBar로 변경
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    TouchableWithoutFeedback,
-    View,
+  Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  StatusBar, // ✅ react-native의 StatusBar로 변경
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View,
 } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { auth } from '../../firebaseConfig';
@@ -121,15 +121,7 @@ export default function EmailForgetCode() {
               />
             </View>
 
-            {/* ✅ 로그인으로 돌아가기 링크 */}
-            <TouchableOpacity
-              style={styles.goBackContainer}
-              onPress={() => router.push("/email_login")}
-            >
-              <Text style={styles.goBackText}>
-                로그인으로 돌아가기
-              </Text>
-            </TouchableOpacity>
+           
           </View>
 
           {/* 하단 버튼 컨테이너 */}
@@ -203,14 +195,6 @@ const styles = StyleSheet.create({
     height: '100%',
     color: '#000000',
     fontSize: 16,
-  },
-  goBackContainer: {
-    marginTop: 20,
-  },
-  goBackText: {
-    fontSize: 14,
-    color: THEME_COLOR,
-    fontWeight: 'bold',
   },
   buttonContainer: {
     width: '100%',

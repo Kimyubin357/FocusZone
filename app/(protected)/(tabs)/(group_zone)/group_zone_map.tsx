@@ -38,7 +38,6 @@ type GroupItem = {
   address: string;
   ownerName: string;
   memberCount: number;
-  activeDays?: number[];
   inviteCode?: string;
   latitude?: number;
   longitude?: number;
@@ -46,7 +45,6 @@ type GroupItem = {
   isActive?: boolean;
 };
 
-const DAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3) COMPONENT
@@ -57,7 +55,7 @@ export default function GroupZoneMap() {
   const bottomSheetRef = useRef<BottomSheet>(null);
   const netInfo = useNetInfo();
   const isOnline = netInfo.isConnected === true;
-  const snapPoints = useMemo(() => ["3%", "50%", "90%"], []);
+  const snapPoints = useMemo(() => ["10%", "50%", "90%"], []);
 
   const [groups, setGroups] = useState<GroupItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,8 +63,8 @@ export default function GroupZoneMap() {
   const [region, setRegion] = useState<Region>({
     latitude: 37.5665,
     longitude: 126.978,
-    latitudeDelta: 0.008,
-    longitudeDelta: 0.008,
+    latitudeDelta: 0.004,
+    longitudeDelta: 0.004,
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -140,7 +138,6 @@ export default function GroupZoneMap() {
             address: data.address ?? "",
             ownerName: ownersMap.get(data.ownerId) ?? "알 수 없음",
             memberCount: data.memberCount ?? 0,
-            activeDays: data.activeDays ?? [],
             inviteCode: data.inviteCode,
             latitude: data.latitude,
             longitude: data.longitude,
@@ -172,8 +169,8 @@ export default function GroupZoneMap() {
           setRegion({
             latitude: loc.coords.latitude,
             longitude: loc.coords.longitude,
-            latitudeDelta: 0.008,
-            longitudeDelta: 0.008,
+            latitudeDelta: 0.002,
+            longitudeDelta: 0.002,
           });
         }
       } catch (e) {
@@ -271,10 +268,6 @@ export default function GroupZoneMap() {
           </View>
 
           <View style={{ flex: 1 }} />
-
-          {item.activeDays && item.activeDays.length > 0 && (
-            <Text style={styles.daysText}>{item.activeDays.map((d) => DAYS[d]).join("·")}</Text>
-          )}
 
           <TouchableOpacity style={styles.navigateButton} onPress={() => onGroupPress(item)}>
             <Ionicons name="navigate-outline" size={18} color="#0D4093" />
@@ -470,7 +463,6 @@ const styles = StyleSheet.create({
   },
   ownerText: { fontSize: 13, color: "#334155" },
   memberText: { fontSize: 13, color: "#334155" },
-  daysText: { fontSize: 12, color: "#475569", fontWeight: "600" },
   navigateButton: { marginLeft: 8, padding: 4 },
 
   // ─ Empty ─

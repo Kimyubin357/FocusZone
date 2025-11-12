@@ -40,8 +40,10 @@ export default function AddFocusPlace() {
   const [longitude, setLongitude] = useState<number | undefined>(
     params.longitude ? Number(params.longitude) : undefined
   );
-  const [radius, setRadius] = useState<number>(
-    params.radius ? Number(params.radius) : (isEditMode ? 100 : 100) // 둘 다 100
+  const [radius, setRadius] = useState<number | undefined>(
+
+    params.radius ? Number(params.radius) : undefined
+
   );
 
   // --- MODIFIED: 차단 앱 '목록'을 직접 상태로 관리 ---
@@ -104,7 +106,7 @@ export default function AddFocusPlace() {
       params: {
         latitude: latitude ?? "",
         longitude: longitude ?? "",
-        radius: radius.toString(),
+        radius: radius?.toString(),
         address: address || "",
         ...(isEditMode && {
           editMode: "true",
@@ -125,7 +127,7 @@ export default function AddFocusPlace() {
         address: address,
         latitude: latitude ?? "",
         longitude: longitude ?? "",
-        radius: radius.toString(),
+        radius: radius?.toString(),
         ...(isEditMode && {
           editMode: "true",
           placeId: placeId,
@@ -237,7 +239,7 @@ export default function AddFocusPlace() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
@@ -269,8 +271,11 @@ export default function AddFocusPlace() {
         <View style={styles.card}>
           <Text style={styles.label}>반지름</Text>
           <View style={styles.rowBtn}>
-    <Text style={[styles.rowBtnText, styles.rowBtnTextDisabled]}>
-        지도에서 설정하세요
+            <Text style={[
+              styles.rowBtnText,
+              !radius && styles.rowBtnTextDisabled
+            ]}>
+              {radius ? `${radius}m` : "지도에서 설정하세요"}
             </Text>
           </View>
         </View>

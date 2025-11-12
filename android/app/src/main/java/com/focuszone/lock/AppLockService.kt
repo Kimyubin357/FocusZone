@@ -90,6 +90,7 @@ class AppLockService : Service() {
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
         // (선택) 어떤 앱이 차단되었는지 LockActivity로 전달
         intent.putExtra("BLOCKED_APP_NAME", packageName) 
+        intent.putExtra("BLOCKED_APP_PACKAGE", packageName)
         startActivity(intent)
     }
 
