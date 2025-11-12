@@ -100,7 +100,7 @@ export default function AddGroupPlace() {
 
   // form states
 
-  const [groupName, setGroupName] = useState(params.name ?? "새로운 그룹장소");
+  const [groupName, setGroupName] = useState(params.name ?? "");
 
   const [address, setAddress] = useState(params.address ?? "주소를 선택하세요");
 

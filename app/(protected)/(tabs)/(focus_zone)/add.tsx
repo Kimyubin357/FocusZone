@@ -27,7 +27,7 @@ export default function AddFocusPlace() {
 
   // ✅ 이름은 사용자가 타이핑한 값 유지가 중요하니 최초 한 번만 초기화
   const [name, setName] = useState(
-    (params.name as string) || "새로운 집중장소"
+    (params.name as string) || ""
   );
 
   // 위치/반지름은 지도에서 돌아올 때 덮어씌울 수 있도록 초기값만 세팅
@@ -269,11 +269,8 @@ export default function AddFocusPlace() {
         <View style={styles.card}>
           <Text style={styles.label}>반지름</Text>
           <View style={styles.rowBtn}>
-            <Text style={[
-              styles.rowBtnText,
-              !radius && styles.rowBtnTextDisabled
-            ]}>
-              {radius ? `${radius}m` : "지도에서 설정하세요"}
+    <Text style={[styles.rowBtnText, styles.rowBtnTextDisabled]}>
+        지도에서 설정하세요
             </Text>
           </View>
         </View>
