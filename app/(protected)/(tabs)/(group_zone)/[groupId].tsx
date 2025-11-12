@@ -2,11 +2,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import {
+  arrayRemove,
   collection,
   doc,
   onSnapshot,
   serverTimestamp,
   updateDoc,
+  writeBatch
 } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
@@ -19,7 +21,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { db } from "../../../../firebaseConfig";
+import { auth, db } from "../../../../firebaseConfig";
 
 // ---- 타입 ----
 type GroupLocationDetails = {
@@ -122,7 +124,7 @@ export default function GroupZoneDetails() {
   // [추가] Effect 2: 멤버 리스트 실시간 리스너 설정
   useEffect(() => {
     // 🚨 [수정] details가 로드된 후에만 실행
-    if (!groupId || !details) return; 
+    if (!groupId || !details) return;
 
     const membersColRef = collection(
       db,
@@ -178,7 +180,80 @@ export default function GroupZoneDetails() {
     );
   };
   //노윤석 끝
+  const handleLongPressMember = (member: GroupMember) => {
+    const currentUserId = auth.currentUser?.uid;
 
+    // 1. 그룹장 본인인지 확인 (그룹장만 이 기능 사용 가능)
+    if (!details || currentUserId !== details.ownerId) {
+      return;
+    }
+
+    // 2. 자기 자신을 내보낼 수 없음
+    if (member.id === currentUserId) {
+      return;
+    }
+
+    // 3. 이미 다른 작업(토글 등)이 진행 중이면 중단
+    if (isToggling) return;
+
+    // 4. 내보내기 확인 알림
+    Alert.alert(
+      "멤버 내보내기",
+      `'${member.nickname}' 님을 그룹에서 내보내시겠습니까?`,
+      [
+        {
+          text: "취소",
+          style: "cancel",
+        },
+        {
+          text: "확인",
+          style: "destructive",
+          onPress: () => kickMember(member.id), // 👈 확인 시 실행
+        },
+      ]
+    );
+  };
+
+  // [추가] 실제 내보내기(Kick) 로직
+  const kickMember = async (memberId: string) => {
+    if (!groupId) return;
+
+    setIsToggling(true); // 작업 시작 (로딩 상태)
+
+    try {
+      // 트랜잭션을 위해 Batch 사용
+      const batch = writeBatch(db);
+
+      // 1. 메인 그룹 문서에서 memberIds 배열에서 제거
+      const groupRef = doc(db, "groupLocations", groupId as string);
+      batch.update(groupRef, {
+        memberIds: arrayRemove(memberId),
+        // (선택) memberCount도 1 줄일 수 있습니다.
+        // memberCount: increment(-1) 
+      });
+
+      // 2. members 서브 컬렉션에서 해당 멤버 문서 삭제
+      const memberRef = doc(
+        db,
+        "groupLocations",
+        groupId as string,
+        "members",
+        memberId
+      );
+      batch.delete(memberRef);
+
+      // 3. Batch 실행
+      await batch.commit();
+
+      Alert.alert("완료", "멤버를 내보냈습니다.");
+      // onSnapshot 리스너가 자동을 목록을 갱신합니다.
+    } catch (e: any) {
+      console.error("Failed to kick member:", e);
+      Alert.alert("오류", "멤버를 내보내는 데 실패했습니다.");
+    } finally {
+      setIsToggling(false); // 작업 완료 (로딩 해제)
+    }
+  };
   const onToggleActive = async () => {
     if (!details || !groupId || isToggling) return; // 중복 클릭 방지
 
@@ -332,6 +407,8 @@ export default function GroupZoneDetails() {
               key={member.id}
               onPress={() => onPressMember(member.id)}
               activeOpacity={0.7}
+              onLongPress={() => handleLongPressMember(member)}
+              disabled={isToggling}
             >
               <View
                 style={[styles.memberRow, index === 0 && { borderTopWidth: 0 }]}
@@ -357,7 +434,9 @@ export default function GroupZoneDetails() {
             <TouchableOpacity
               key={member.id}
               onPress={() => onPressMember(member.id)}
+              onLongPress={() => handleLongPressMember(member)}
               activeOpacity={0.7}
+              disabled={isToggling}
             >
               <View
                 style={[styles.memberRow, index === 0 && { borderTopWidth: 0 }]}

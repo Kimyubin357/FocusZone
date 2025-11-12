@@ -1,3 +1,4 @@
+// app/(contexts)/join.tsx
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   arrayUnion,

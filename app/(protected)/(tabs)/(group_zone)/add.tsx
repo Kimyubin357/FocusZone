@@ -40,10 +40,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { auth, db } from "../../../../firebaseConfig";
 
-
-
-const DAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
-
 type BlockingPolicy = "MEMBERS_ONLY" | "ALL_PARTICIPANTS"; // [추가]
 
 
@@ -91,8 +87,6 @@ export default function AddGroupPlace() {
     name?: string;
 
     updatedCategories?: string; // ⭐️ 카테고리 선택기에서 받을 파라미터
-
-    activeDays?: string; // ⭐️ 다른 화면 이동 시 유지할 파라미터 (JSON)
 
     blockingPolicy?: BlockingPolicy; // ⭐️ 다른 화면 이동 시 유지할 파라미터
     currentCategories?: string; // ⭐️ Map/Categoryselect에서 받은 '현재' 카테고리
@@ -152,20 +146,6 @@ export default function AddGroupPlace() {
 
   );
 
-  const [activeDays, setactiveDays] = useState<number[]>(() => {
-
-    try {
-
-      if (params.activeDays) return JSON.parse(params.activeDays);
-
-    } catch (e) { }
-
-    return []; // 기본값
-
-  });
-
-
-
   // ⭐️ 4. [수정] useState가 params를 읽도록 수정
   const [blockingPolicy, setBlockingPolicy] = useState<BlockingPolicy>(
     params.blockingPolicy ?? "MEMBERS_ONLY"
@@ -191,20 +171,6 @@ export default function AddGroupPlace() {
   const [loadingDoc, setLoadingDoc] = useState<boolean>(isEditMode); // 수정모드면 처음에 로딩
 
   const [saving, setSaving] = useState<boolean>(false);
-
-
-
-  const toggleDay = (idx: number) => {
-
-    setactiveDays((prev) =>
-
-      prev.includes(idx) ? prev.filter((d) => d !== idx) : [...prev, idx]
-
-    );
-
-  };
-
-
 
   // 수정 모드일 때 기존 문서 불러오기
 
@@ -254,13 +220,6 @@ export default function AddGroupPlace() {
               : typeof data.radius === "number"
                 ? data.radius
                 : undefined
-          );
-          setactiveDays(
-            params.activeDays
-              ? JSON.parse(params.activeDays)
-              : Array.isArray(data.activeDays)
-                ? data.activeDays
-                : []
           );
           setBlockingPolicy(
             params.blockingPolicy ?? data.blockingPolicy ?? "MEMBERS_ONLY"
@@ -336,25 +295,14 @@ export default function AddGroupPlace() {
         // --- 수정 모드 ---
 
         const payload = {
-
           groupName: groupName.trim(),
-
           address,
-
           latitude: latitude ?? null,
-
           longitude: longitude ?? null,
-
           radius: Number(radius),
-
-          activeDays: activeDays.sort((a, b) => a - b),
-
           updatedAt: serverTimestamp(),
-
           // [추가] 스키마 필드
-
           blockingPolicy: blockingPolicy,
-
           blockedAppCategories: blockedAppCategories,
           isActive: true, //이미 저장해서 등록하면 isActive는 true인데 굳이 수정할 때도 값을 넣어줘야 하나?
         };
@@ -426,8 +374,6 @@ export default function AddGroupPlace() {
           longitude: longitude ?? null,
 
           radius: Number(radius),
-
-          activeDays: activeDays.sort((a, b) => a - b),
 
           // [수정] creatorId -> ownerId
 
@@ -530,23 +476,13 @@ export default function AddGroupPlace() {
   const goToMap = () => {
 
     const mapParams: Record<string, any> = {
-
       // 항상 현재 폼 상태(groupName)를 'name' 키로 전달
-
       ...params,
-
       name: groupName,
-
       radius: radius?.toString(),
-
       address: address,
-
-      activeDays: JSON.stringify(activeDays),
-
       blockingPolicy: blockingPolicy,
-
       currentCategories: JSON.stringify(blockedAppCategories),
-
     };
 
     // 값이 있을 때만 파라미터에 추가 (undefined 방지)
@@ -592,29 +528,16 @@ export default function AddGroupPlace() {
       pathname: "/(protected)/(tabs)/(group_zone)/categoryselect",
 
       params: {
-
         ...params, // ⭐️ 기존 params (placeId, editMode 등)
-
         // ⭐️ 현재 폼 상태
-
         name: groupName,
-
         address: address,
-
         latitude: latitude?.toString() ?? "",
-
         longitude: longitude?.toString() ?? "",
-
         radius: radius?.toString() ?? "",
-
-        activeDays: JSON.stringify(activeDays),
-
         blockingPolicy: blockingPolicy,
-
         // ⭐️ 카테고리 선택기에 현재 선택된 카테고리 목록 전달
-
         currentCategories: JSON.stringify(blockedAppCategories),
-
       },
 
     });
@@ -932,87 +855,6 @@ export default function AddGroupPlace() {
             </TouchableOpacity>
 
           </View>
-
-
-
-          {/* 요일 선택 */}
-
-          <Text
-
-            style={{
-
-              fontSize: 14,
-
-              color: colors.text,
-
-              marginTop: 16,
-
-              marginBottom: 8,
-
-            }}
-
-          >
-
-            요일 선택
-
-          </Text>
-
-          <View style={styles.daysRow}>
-
-            {DAYS.map((label, idx) => {
-
-              const active = activeDays.includes(idx);
-
-              const chipBorder = active ? colors.tint : colors.border;
-
-              const chipBg = active
-
-                ? theme === "dark"
-
-                  ? "rgba(37,99,235,0.25)"
-
-                  : "rgba(37,99,235,0.20)"
-
-                : theme === "dark"
-
-                  ? "rgba(120,120,120,0.25)"
-
-                  : "rgba(209,213,219,0.35)";
-
-              const chipText = active ? colors.tint : colors.muted;
-
-              return (
-
-                <TouchableOpacity
-
-                  key={idx}
-
-                  onPress={() => toggleDay(idx)}
-
-                  style={[
-
-                    styles.dayChip,
-
-                    { borderColor: chipBorder, backgroundColor: chipBg },
-
-                  ]}
-
-                >
-
-                  <Text style={[styles.dayText, { color: chipText }]}>
-
-                    {label}
-
-                  </Text>
-
-                </TouchableOpacity>
-
-              );
-
-            })}
-
-          </View>
-
         </ScrollView>
 
       )}
@@ -1078,41 +920,6 @@ const styles = StyleSheet.create({
   },
 
   rowBtnText: { marginLeft: 8, fontSize: 15 },
-
-  daysRow: {
-
-    flexDirection: "row",
-
-    flexWrap: "wrap",
-
-    marginTop: 8,
-
-    marginRight: -8,
-
-  },
-
-  dayChip: {
-
-    width: 36,
-
-    height: 36,
-
-    borderRadius: 18,
-
-    alignItems: "center",
-
-    justifyContent: "center",
-
-    borderWidth: 1,
-
-    marginRight: 8,
-
-    marginBottom: 8,
-
-  },
-
-  dayText: { fontWeight: "700" },
-
   // [추가] 정책 선택 UI
 
   policyRow: {

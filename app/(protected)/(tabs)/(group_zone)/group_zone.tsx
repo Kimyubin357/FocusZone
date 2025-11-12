@@ -42,15 +42,11 @@ type GroupItem = {
   memberIds?: string[];
   memberAvatars?: string[];
   memberCount: number;
-  activeDays?: number[];
   inviteCode?: string;
   ownerId?: string;
   myRole?: string;
   isActive?: boolean; // [추가]
 };
-
-// 요일 라벨
-const DAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
 // util
 const hexToRgba = (hex: string, alpha: number) => {
@@ -220,7 +216,6 @@ export default function GroupZone() {
             ownerName: ownersMap.get(data.ownerId) ?? "알 수 없음",
             userId: data.ownerId,
             memberCount: data.memberCount ?? 0,
-            activeDays: data.activeDays ?? [],
             inviteCode: data.inviteCode,
             ownerId: data.ownerId,
             myRole: myRolesMap.get(doc.id),
@@ -552,19 +547,16 @@ function GroupCard({
     );
   }, [memberCount]);
 
-  // 오늘 활성 여부
-  const today = new Date().getDay();
-  const isActiveToday = (item.activeDays ?? []).includes(today);
   // 유지: 초록 칩 톤(다크에선 투명도 조금 더)
-  const chipBg = isActiveToday
+  const chipBg = item.isActive
     ? theme === "dark"
       ? "rgba(34,197,94,0.22)"
       : "rgba(34,197,94,0.18)"
     : theme === "dark"
     ? hexToRgba(colors.border, 0.25)
     : hexToRgba(colors.border, 0.35);
-  const chipText = isActiveToday ? "#16A34A" : colors.muted;
-  const chipLabel = isActiveToday ? "오늘 활성" : "오늘 비활성";
+  const chipText = item.isActive ? "#16A34A" : colors.muted;
+  const chipLabel = item.isActive ? "오늘 활성" : "오늘 비활성";
 
   const myRoleLabel = item.myRole === "owner" ? "그룹장" : "그룹원";
   const myRoleColor = item.myRole === "owner" ? colors.tint : colors.muted;
@@ -646,30 +638,6 @@ function GroupCard({
         </View>
       </View>
 
-      {/* 요일 칩들 (원래 파랑/회색 톤 유지하되 테마와 조화) */}
-      <View style={styles.daysRow}>
-        {DAYS.map((label, idx) => {
-          const active = (item.activeDays ?? []).includes(idx);
-          const dBorder = active ? colors.tint : colors.border;
-          const dBg = active
-            ? hexToRgba(colors.tint, theme === "dark" ? 0.25 : 0.2)
-            : theme === "dark"
-            ? hexToRgba(colors.border, 0.25)
-            : hexToRgba(colors.border, 0.35);
-          const dText = active ? colors.tint : colors.muted;
-          return (
-            <View
-              key={idx}
-              style={[
-                styles.dayChip,
-                { borderColor: dBorder, backgroundColor: dBg },
-              ]}
-            >
-              <Text style={[styles.dayText, { color: dText }]}>{label}</Text>
-            </View>
-          );
-        })}
-      </View>
 
       {/* 하단: 멤버 아이콘들 + 총 인원 */}
       <View style={[styles.rowBetween, { marginTop: 12 }]}>
@@ -770,24 +738,6 @@ const styles = StyleSheet.create({
 
   chip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 9999 },
   chipText: { fontSize: 12, fontWeight: "700" },
-
-  daysRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginTop: 10,
-    marginRight: -8,
-  },
-  dayChip: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  dayText: { fontSize: 12, fontWeight: "700" },
 
   avatar: {
     width: 28,
