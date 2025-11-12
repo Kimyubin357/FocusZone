@@ -81,7 +81,24 @@ export default function FocusZoneScreen() {
     latitudeDelta: 0.008,
     longitudeDelta: 0.008,
   });
-
+  
+// 👇 리스트에서 장소로 지도 이동 (부드럽게)
+const moveCameraToPlace = (place: Place) => {
+  if (!place.latitude || !place.longitude) return;
+  setRegion({
+    latitude: place.latitude,
+    longitude: place.longitude,
+    latitudeDelta: 0.008,
+    longitudeDelta: 0.008,
+  });
+  mapRef.current?.animateCamera(
+    {
+      center: { latitude: place.latitude, longitude: place.longitude },
+      zoom: 17,
+    },
+    { duration: 1200 }
+  );
+};
   const [isLoading, setIsLoading] = useState(false);
   // ───────────────────────────────────────────────────────────────────────────
   // 4) EFFECTS
