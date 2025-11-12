@@ -33,8 +33,6 @@ type GroupItem = {
   isActive?: boolean;
 };
 
-const DAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
-
 export default function GroupZoneMap() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
@@ -44,7 +42,7 @@ export default function GroupZoneMap() {
   const netInfo = useNetInfo();
   const isOnline = netInfo.isConnected === true;
 
-  const snapPoints = useMemo(() => ["3%", "50%", "90%"], []);
+  const snapPoints = useMemo(() => ["10%", "50%", "90%"], []);
 
   // ⭐️ [추가] 네트워크 끊기면 자동으로 이전 화면으로
   useEffect(() => {

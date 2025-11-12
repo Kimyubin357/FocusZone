@@ -78,27 +78,36 @@ export default function FocusZoneScreen() {
   const [region, setRegion] = useState<Region>({
     latitude: 37.5665,
     longitude: 126.978,
-    latitudeDelta: 0.008,
-    longitudeDelta: 0.008,
+    latitudeDelta: 0.002, // ✅ [수정 2] 더 확대 (0.008 -> 0.005)
+    longitudeDelta: 0.002, // ✅ [수정 2] 더 확대
   });
   
-// 👇 리스트에서 장소로 지도 이동 (부드럽게)
-const moveCameraToPlace = (place: Place) => {
-  if (!place.latitude || !place.longitude) return;
-  setRegion({
-    latitude: place.latitude,
-    longitude: place.longitude,
-    latitudeDelta: 0.008,
-    longitudeDelta: 0.008,
-  });
-  mapRef.current?.animateCamera(
-    {
-      center: { latitude: place.latitude, longitude: place.longitude },
-      zoom: 17,
-    },
-    { duration: 1200 }
-  );
-};
+  // ✅ [수정 1] 지도 오프셋 계산 (0.3)
+  const getMapCenterOffset = (latitudeDelta: number) => {
+    return latitudeDelta * 0.3;
+  };
+  
+  // 👇 리스트에서 장소로 지도 이동 (부드럽게)
+  const moveCameraToPlace = (place: Place) => {
+    if (!place.latitude || !place.longitude) return;
+    
+    const newDelta = 0.001; // ✅ [수정 2] 더 확대
+    const mapCenterOffset = getMapCenterOffset(newDelta);
+    // ✅ [수정 1] 오프셋을 더하는(+)게 아니라 빼서(-) 핀을 위로 올림
+    const centeredLatitude = place.latitude - mapCenterOffset;
+
+    const newRegion: Region = {
+      latitude: centeredLatitude,
+      longitude: place.longitude,
+      latitudeDelta: newDelta,
+      longitudeDelta: newDelta,
+    };
+    
+    // ✅ [수정 3] setRegion을 제거하고 animateToRegion만 호출 (버그 수정)
+    // setRegion(newRegion);
+    mapRef.current?.animateToRegion(newRegion, 1200);
+  };
+  
   const [isLoading, setIsLoading] = useState(false);
   // ───────────────────────────────────────────────────────────────────────────
   // 4) EFFECTS
@@ -121,11 +130,16 @@ const moveCameraToPlace = (place: Place) => {
             latitude: loc.coords.latitude,
             longitude: loc.coords.longitude,
           });
+          
+          const initialDelta = 0.002; // ✅ [수정 2] 더 확대
+          const mapCenterOffset = getMapCenterOffset(initialDelta);
+
           setRegion({
-            latitude: loc.coords.latitude,
+            // ✅ [수정 1] 오프셋을 빼서(-) 핀을 위로 올림
+            latitude: loc.coords.latitude - mapCenterOffset,
             longitude: loc.coords.longitude,
-            latitudeDelta: 0.008,
-            longitudeDelta: 0.008,
+            latitudeDelta: initialDelta,
+            longitudeDelta: initialDelta,
           });
         }
       } catch (e) {
@@ -138,7 +152,6 @@ const moveCameraToPlace = (place: Place) => {
   // 5) HELPERS
   // ───────────────────────────────────────────────────────────────────────────
 
-  // 👇 [추가] locationService.tsx에서 getDistance 함수 복사
   const getDistance = (
     lat1: number,
     lon1: number,
@@ -162,16 +175,20 @@ const moveCameraToPlace = (place: Place) => {
   const animateTo = (
     lat: number,
     lng: number,
-    latDelta = 0.01,
-    lngDelta = 0.01
+    latDelta = 0.001, // ✅ [수정 2] 더 확대 (기본값)
+    lngDelta = 0.001 // ✅ [수정 2] 더 확대 (기본값)
   ) => {
+    const mapCenterOffset = getMapCenterOffset(latDelta);
+    
     const next: Region = {
-      latitude: lat,
+      latitude: lat - mapCenterOffset, // ✅ [수정 1] 오프셋을 빼서(-) 핀을 위로 올림
       longitude: lng,
       latitudeDelta: latDelta,
       longitudeDelta: lngDelta,
     };
-    setRegion(next);
+    
+    // ✅ [수정 3] setRegion을 제거하고 animateToRegion만 호출 (버그 수정)
+    // setRegion(next);
     mapRef.current?.animateToRegion(next, 350);
   };
 
@@ -194,7 +211,6 @@ const moveCameraToPlace = (place: Place) => {
     }
   };
 
-  // ⭐️ [추가] 메뉴 위치 계산 (group_zone과 동일)
   const menuTop = (() => {
     if (!menuAnchor) return 90;
     const below = menuAnchor.y + menuAnchor.h + 8;
@@ -211,12 +227,11 @@ const moveCameraToPlace = (place: Place) => {
   // 6) HANDLERS
   // ───────────────────────────────────────────────────────────────────────────
   const toggleAllActive = async () => {
-    if (isLoading) return; // 👈 [추가 1]
-    setIsLoading(true); // 👈 [추가 2]
+    if (isLoading) return;
+    setIsLoading(true);
 
     try {
       try {
-        // 3. [기존 로직] 버튼 누른 시점의 현재 위치 가져오기
         const loc = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
@@ -241,29 +256,27 @@ const moveCameraToPlace = (place: Place) => {
               "변경 불가",
               "하나 이상의 장소 내부에 있을 때는 전체 변경을 할 수 없습니다."
             );
-            return; // 👈 함수 종료 (finally가 실행됨)
+            return; 
           }
         }
       } catch (e) {
         console.warn("Location check failed, allowing toggle all.", e);
       }
-
-      // 4. [기존 로직] 외부일 경우 토글 실행
+      
       const isAnyActive = places.some((p) => p.isActive);
       const updated = places.map((p) => ({ ...p, isActive: !isAnyActive }));
-      await savePlaces(updated); // await 추가
+      await savePlaces(updated); 
     } finally {
-      setIsLoading(false); // 👈 [추가 3]
+      setIsLoading(false); 
     }
   };
 
   const toggleSelection = async (item: Place) => {
-    if (isLoading) return; // 👈 [추가 1]
-    setIsLoading(true); // 👈 [추가 2]
+    if (isLoading) return; 
+    setIsLoading(true); 
 
     try {
       try {
-        // 3. [기존 로직] 버튼 누른 시점의 현재 위치 가져오기
         const loc = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
@@ -288,20 +301,19 @@ const moveCameraToPlace = (place: Place) => {
               "변경 불가",
               "장소 내부에 있을 때는 활성화 상태를 변경할 수 없습니다."
             );
-            return; // 👈 함수 종료 (finally가 실행됨)
+            return; 
           }
         }
       } catch (e) {
         console.warn("Location check failed, allowing toggle.", e);
       }
 
-      // 4. [기존 로직] 외부일 경우 토글 실행
       const updated = places.map((p) =>
         p.id === item.id ? { ...p, isActive: !p.isActive } : p
       );
-      await savePlaces(updated); // await 추가
+      await savePlaces(updated); 
     } finally {
-      setIsLoading(false); // 👈 [추가 3]
+      setIsLoading(false); 
     }
   };
 
@@ -319,7 +331,8 @@ const moveCameraToPlace = (place: Place) => {
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
       });
-      animateTo(loc.coords.latitude, loc.coords.longitude);
+      // ✅ [수정 2] 더 확대
+      animateTo(loc.coords.latitude, loc.coords.longitude, 0.001, 0.001);
     } catch (e) {
       console.error(e);
       Alert.alert("오류", "현재 위치를 가져올 수 없습니다.");
@@ -327,14 +340,13 @@ const moveCameraToPlace = (place: Place) => {
   };
 
   const handleEdit = async () => {
-    if (isLoading) return; // 👈 [추가 1]
+    if (isLoading) return;
     if (!selectedPlace) return;
 
-    setIsLoading(true); // 👈 [추가 2]
+    setIsLoading(true);
 
     try {
       try {
-        // 3. [기존 로직] 버튼 누른 시점의 현재 위치 가져오기
         const loc = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
@@ -360,14 +372,13 @@ const moveCameraToPlace = (place: Place) => {
               "장소 내부에 있을 때는 수정할 수 없습니다."
             );
             closeMenu();
-            return; // 👈 함수 종료 (finally가 실행됨)
+            return;
           }
         }
       } catch (e) {
         console.warn("Location check failed, allowing edit.", e);
       }
 
-      // 4. [기존 로직] 외부일 경우 수정 실행
       closeMenu();
       router.push({
         pathname: "/(protected)/(tabs)/(focus_zone)/add",
@@ -383,18 +394,17 @@ const moveCameraToPlace = (place: Place) => {
         },
       });
     } finally {
-      setIsLoading(false); // 👈 [추가 3]
+      setIsLoading(false);
     }
   };
 
   const handleDelete = async () => {
-    if (isLoading) return; // 👈 [추가 1]
+    if (isLoading) return;
     if (!selectedPlace) return;
 
-    setIsLoading(true); // 👈 [추가 2]
+    setIsLoading(true);
 
     try {
-      // 3. [기존 로직] 버튼 누른 시점의 현재 위치 가져오기
       const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
@@ -420,7 +430,7 @@ const moveCameraToPlace = (place: Place) => {
             "장소 내부에 있을 때는 삭제할 수 없습니다."
           );
           closeMenu();
-          setIsLoading(false); // 👈 [추가 3a] - 경고 시 로딩 해제
+          setIsLoading(false); 
           return;
         }
       }
@@ -428,7 +438,6 @@ const moveCameraToPlace = (place: Place) => {
       console.warn("Location check failed, allowing delete.", e);
     }
 
-    // 4. [기존 로직] 외부일 경우 삭제 Alert 표시
     closeMenu();
     Alert.alert(
       "삭제 확인",
@@ -437,7 +446,7 @@ const moveCameraToPlace = (place: Place) => {
         {
           text: "취소",
           style: "cancel",
-          onPress: () => setIsLoading(false), // 👈 [추가 3b] - 취소 시 로딩 해제
+          onPress: () => setIsLoading(false),
         },
         {
           text: "삭제",
@@ -445,34 +454,19 @@ const moveCameraToPlace = (place: Place) => {
           onPress: async () => {
             try {
               const updated = places.filter(
-                (p) => p.id !== selectedPlace!.id // selectedPlace는 위에서 !null 체크됨
+                (p) => p.id !== selectedPlace!.id 
               );
               await savePlaces(updated);
               setSelectedPlace(null);
             } catch (e) {
               console.error("Delete failed", e);
             } finally {
-              setIsLoading(false); // 👈 [추가 3c] - 삭제 완료 시 로딩 해제
+              setIsLoading(false);
             }
           },
         },
       ]
     );
-
-    // 4. [기존 로직] 외부일 경우 삭제 실행
-    closeMenu();
-    Alert.alert("삭제 확인", `"${selectedPlace.name}"를 삭제하시겠습니까?`, [
-      { text: "취소", style: "cancel" },
-      {
-        text: "삭제",
-        style: "destructive",
-        onPress: () => {
-          const updated = places.filter((p) => p.id !== selectedPlace.id);
-          savePlaces(updated);
-          setSelectedPlace(null);
-        },
-      },
-    ]);
   };
 
   const closeMenu = () => {
@@ -489,7 +483,6 @@ const moveCameraToPlace = (place: Place) => {
   // 7) RENDER: 리스트 아이템
   // ───────────────────────────────────────────────────────────────────────────
   const renderItem = ({ item }: { item: Place }) => {
-    // ⭐️ [수정] useRef 제거하고 이벤트에서 직접 측정
     const handleMenuPress = (event: any) => {
       event.target.measure((x: number, y: number, width: number, height: number, pageX: number, pageY: number) => {
         setSelectedPlace(item);
@@ -589,7 +582,6 @@ const moveCameraToPlace = (place: Place) => {
 
       </MapView>
 
-      {/* ⭐️ [수정] map.tsx와 동일한 현재 위치 버튼 */}
       <TouchableOpacity
         style={styles.locationButton}
         onPress={getCurrentLocation}
@@ -599,135 +591,134 @@ const moveCameraToPlace = (place: Place) => {
       </TouchableOpacity>
 
       <BottomSheet
-  ref={bottomSheetRef}
-  index={0}
-  snapPoints={snapPoints}
-  enablePanDownToClose={false}
-  enableOverDrag={false}
-  style={{
-    backgroundColor: "#F9FAFB",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 10,
-    borderWidth: 0.8,
-    borderColor: "#E5E7EB",
-  }}
->
-  <BottomSheetView
-    style={{
-      paddingHorizontal: 20,
-      paddingTop: 10,
-      paddingBottom: 28,
-      minHeight: 220,
-    }}
-  >
-    {/* 상단 바 (handle) */}
-    <View style={{ alignItems: "center", marginBottom: 10 }}>
-      <View
+        ref={bottomSheetRef}
+        index={2} 
+        snapPoints={snapPoints}
+        enablePanDownToClose={false}
+        enableOverDrag={false}
         style={{
-          width: 50,
-          height: 5,
-          backgroundColor: "#0",
-          borderRadius: 3,
-        }}
-      />
-    </View>
-
-    {/* 헤더 영역 */}
-    <View
-      style={{
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 18,
-      }}
-    >
-      <Text
-        style={{
-          fontSize: 20,
-          fontWeight: "700",
-          color: "#0D4093",
-          letterSpacing: -0.5,
+          backgroundColor: "#F9FAFB",
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 28,
+          shadowColor: "#000",
+          shadowOpacity: 0.08,
+          shadowRadius: 12,
+          elevation: 10,
+          borderWidth: 0.8,
+          borderColor: "#E5E7EB",
         }}
       >
-        집중장소
-      </Text>
-
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-        <Text
+        <BottomSheetView
           style={{
-            fontSize: 15,
-            color: "#6B7280",
-            fontWeight: "600",
-            marginRight: 6,
+            flex: 1, 
+            paddingHorizontal: 20,
+            paddingTop: 10,
           }}
         >
-          {places.filter((p) => p.isActive).length}/{places.length}
-        </Text>
+          {/* 상단 바 (handle) */}
+          <View style={{ alignItems: "center", marginBottom: 10 }}>
+            <View
+              style={{
+                width: 50,
+                height: 5,
+                backgroundColor: "#0",
+                borderRadius: 3,
+              }}
+            />
+          </View>
 
-        {/* 전체 on/off 버튼 */}
-        <TouchableOpacity
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: 19,
-            backgroundColor: "#0D4093",
-            justifyContent: "center",
-            alignItems: "center",
-            shadowColor: "#000",
-            shadowOpacity: 0.1,
-            shadowRadius: 4,
-            elevation: 3,
-          }}
-          onPress={toggleAllActive}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name={isAnyPlaceActive ? "power-outline" : "power"}
-            size={18}
-            color="#fff"
+          {/* 헤더 영역 */}
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 18,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: "700",
+                color: "#0D4093",
+                letterSpacing: -0.5,
+              }}
+            >
+              집중장소
+            </Text>
+
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <Text
+                style={{
+                  fontSize: 15,
+                  color: "#6B7280",
+                  fontWeight: "600",
+                  marginRight: 6,
+                }}
+              >
+                {places.filter((p) => p.isActive).length}/{places.length}
+              </Text>
+
+              {/* 전체 on/off 버튼 */}
+              <TouchableOpacity
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  backgroundColor: "#0D4093",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  shadowColor: "#000",
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                  elevation: 3,
+                }}
+                onPress={toggleAllActive}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={isAnyPlaceActive ? "power-outline" : "power"}
+                  size={18}
+                  color="#fff"
+                />
+              </TouchableOpacity>
+
+              {/* 장소 추가 버튼 */}
+              <TouchableOpacity
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  backgroundColor: "#0D4093",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  shadowColor: "#000",
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                  elevation: 3,
+                }}
+                onPress={goToAdd}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* 리스트 */}
+          <FlatList
+            data={places}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            ListEmptyComponent={renderEmptyList}
+            contentContainerStyle={{
+              paddingBottom: 16,
+              flexGrow: 1,
+            }}
+            showsVerticalScrollIndicator={false}
           />
-        </TouchableOpacity>
-
-        {/* 장소 추가 버튼 */}
-        <TouchableOpacity
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: 19,
-            backgroundColor: "#0D4093",
-            justifyContent: "center",
-            alignItems: "center",
-            shadowColor: "#000",
-            shadowOpacity: 0.1,
-            shadowRadius: 4,
-            elevation: 3,
-          }}
-          onPress={goToAdd}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="add" size={20} color="#fff" />
-        </TouchableOpacity>
-      </View>
-    </View>
-
-    {/* 리스트 */}
-    <FlatList
-      data={places}
-      keyExtractor={(item) => item.id}
-      renderItem={renderItem}
-      ListEmptyComponent={renderEmptyList}
-      contentContainerStyle={{
-        paddingBottom: 16,
-        flexGrow: 1,
-      }}
-      showsVerticalScrollIndicator={false}
-    />
-  </BottomSheetView>
-</BottomSheet>
+        </BottomSheetView>
+      </BottomSheet>
 
 
       {/* ⭐️ [수정] group_zone과 동일한 메뉴 */}
@@ -768,10 +759,9 @@ const moveCameraToPlace = (place: Place) => {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  // ⭐️ [수정] map.tsx와 동일한 스타일
   locationButton: {
     position: "absolute",
-    top: 40, // 검색바 아래 위치
+    top: 40, 
     right: 16,
     width: 46,
     height: 46,
@@ -784,66 +774,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     zIndex: 1000,
-  },
-
-  bottomSheet: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: "#EEF2F7",
-  },
-  sheetContent: {
-    padding: 20,
-    paddingBottom: 32,
-    minHeight: 200,
-  },
-
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 18,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#0D4093",
-    letterSpacing: -0.5,
-  },
-
-  headerButtons: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  countText: {
-    fontSize: 15,
-    color: "#6B7280",
-    fontWeight: "600",
-    marginRight: 6,
-  },
-
-  toggleButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#0D4093",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  addButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#0D4093",
-    justifyContent: "center",
-    alignItems: "center",
   },
 
   cardContainer: { marginBottom: 8 },
@@ -880,7 +810,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // ⭐️ [수정] group_zone과 동일한 메뉴 스타일
   menuBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.2)"
