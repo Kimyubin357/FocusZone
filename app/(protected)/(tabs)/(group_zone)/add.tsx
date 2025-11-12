@@ -92,28 +92,6 @@ export default function AddGroupPlace() {
     currentCategories?: string; // ⭐️ Map/Categoryselect에서 받은 '현재' 카테고리
   }>();
 
-  // 기본 색상 (라이트 테마 가정)
-
-  const colors = {
-
-    background: "#FFFFFF",
-
-    card: "#F8F8F8",
-
-    text: "#111111",
-
-    muted: "#777777",
-
-    tint: "#0D4093",
-
-    border: "#E0E0E0",
-
-  };
-
-  const theme = "light"; // 다크모드 미사용 시 고정
-
-
-
   const isEditMode = params.editMode === "true";
 
   const placeId = params.placeId;
@@ -554,27 +532,17 @@ export default function AddGroupPlace() {
 
   return (
 
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView style={styles.container}>
 
-      <View
-
-        style={[
-
-          styles.header,
-
-          { borderBottomColor: colors.border, backgroundColor: colors.card },
-
-        ]}
-
-      >
+      <View style={styles.header}>
 
         <TouchableOpacity onPress={onCancel} disabled={saving}>
 
-          <Text style={[styles.headerAction, { color: "#EF4444" }]}>취소</Text>
+          <Text style={[styles.headerAction, styles.cancelText]}>취소</Text>
 
         </TouchableOpacity>
 
-        <Text style={[styles.headerTitle, { color: colors.text }]}>
+        <Text style={styles.headerTitle}>
 
           {isEditMode ? "그룹장소 수정" : "그룹장소 등록"}
 
@@ -584,7 +552,8 @@ export default function AddGroupPlace() {
           <Text
             style={[
               styles.headerAction,
-              { color: saving || loadingDoc ? colors.muted : colors.tint },
+              styles.saveText,
+              (saving || loadingDoc) && styles.saveTextDisabled,
             ]}
           >
             {saving ? "저장중..." : "저장"}
@@ -597,41 +566,22 @@ export default function AddGroupPlace() {
 
       {loadingDoc ? (
 
-        <View
+        <View style={styles.loadingContainer}>
 
-          style={{
-
-            height: 240,
-
-            alignItems: "center",
-
-            justifyContent: "center",
-
-          }}
-
-        >
-
-          <ActivityIndicator />
+          <ActivityIndicator size="large" color="#0D4093" />
 
         </View>
 
       ) : (
 
-        <ScrollView contentContainerStyle={{ padding: 16 }}>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
 
-          <View
+          <View style={styles.card}>
 
-            style={[
-
-              styles.card,
-
-              { backgroundColor: colors.card, borderColor: colors.border },
-
-            ]}
-
-          >
-
-            <Text style={[styles.label, { color: colors.muted }]}>
+            <Text style={styles.label}>
 
               그룹장소명
 
@@ -639,25 +589,11 @@ export default function AddGroupPlace() {
 
             <TextInput
 
-              style={[
-
-                styles.input,
-
-                {
-
-                  color: colors.text,
-
-                  borderColor: colors.border,
-
-                  backgroundColor: colors.background,
-
-                },
-
-              ]}
+              style={styles.input}
 
               placeholder="예) 도서관, 스터디카페"
 
-              placeholderTextColor={colors.muted}
+              placeholderTextColor="#9CA3AF"
 
               value={groupName}
 
@@ -669,33 +605,23 @@ export default function AddGroupPlace() {
 
 
 
-          <View
+          <View style={styles.card}>
 
-            style={[
-
-              styles.card,
-
-              { backgroundColor: colors.card, borderColor: colors.border },
-
-            ]}
-
-          >
-
-            <Text style={[styles.label, { color: colors.muted }]}>위치</Text>
+            <Text style={styles.label}>위치</Text>
 
             <TouchableOpacity
 
-              style={[styles.rowBtn, { backgroundColor: colors.background }]}
+              style={styles.rowBtn}
 
-              activeOpacity={0.8}
+              activeOpacity={0.7}
 
               onPress={goToMap}
 
             >
 
-              <Ionicons name="navigate-outline" size={18} color={colors.tint} />
+              <Ionicons name="navigate-outline" size={20} color="#0D4093" />
 
-              <Text style={[styles.rowBtnText, { color: colors.text }]}>
+              <Text style={styles.rowBtnText}>
 
                 {address || "주소를 선택하세요"}
 
@@ -707,24 +633,18 @@ export default function AddGroupPlace() {
 
 
 
-          <View
+          <View style={styles.card}>
 
-            style={[
+            <Text style={styles.label}>반지름</Text>
 
-              styles.card,
-
-              { backgroundColor: colors.card, borderColor: colors.border },
-
-            ]}
-
-          >
-
-            <Text style={[styles.label, { color: colors.muted }]}>반지름</Text>
-
-            <Text style={[styles.rowBtnText, { color: radius ? colors.text : colors.muted }]}>
-              {radius ? `${radius}m` : "지도에서 설정하세요"}
-
-            </Text>
+            <View style={styles.rowBtn}>
+              <Text style={[
+                styles.rowBtnText,
+                !radius && styles.rowBtnTextDisabled
+              ]}>
+                {radius ? `${radius}m` : "지도에서 설정하세요"}
+              </Text>
+            </View>
 
           </View>
           {/* [추가] 차단 정책 선택 UI */}
@@ -747,6 +667,8 @@ export default function AddGroupPlace() {
 
                 onPress={() => setBlockingPolicy("MEMBERS_ONLY")}
 
+                activeOpacity={0.7}
+
               >
 
                 <Text
@@ -758,7 +680,6 @@ export default function AddGroupPlace() {
                     blockingPolicy === "MEMBERS_ONLY" &&
 
                     styles.policyTextActive,
-                    { marginRight: 8 },
 
                   ]}
 
@@ -783,6 +704,8 @@ export default function AddGroupPlace() {
                 ]}
 
                 onPress={() => setBlockingPolicy("ALL_PARTICIPANTS")}
+
+                activeOpacity={0.7}
 
               >
 
@@ -810,19 +733,9 @@ export default function AddGroupPlace() {
 
           </View>
 
-          <View
+          <View style={styles.card}>
 
-            style={[
-
-              styles.card,
-
-              { backgroundColor: colors.card, borderColor: colors.border },
-
-            ]}
-
-          >
-
-            <Text style={[styles.label, { color: colors.muted }]}>
+            <Text style={styles.label}>
 
               차단할 카테고리
 
@@ -830,21 +743,21 @@ export default function AddGroupPlace() {
 
             <TouchableOpacity
 
-              style={[styles.rowBtn, { backgroundColor: colors.background }]}
+              style={styles.rowBtn}
 
-              activeOpacity={0.8}
+              activeOpacity={0.7}
 
               onPress={goToCategorySelect}
 
             >
 
-              <Ionicons name="grid-outline" size={18} color={colors.tint} />
+              <Ionicons name="grid-outline" size={20} color="#0D4093" />
 
-              <Text style={[styles.rowBtnText, { color: colors.text }]}>
+              <Text style={styles.rowBtnText}>
 
                 카테고리 선택{" "}
 
-                <Text style={{ color: colors.tint, fontWeight: "bold" }}>
+                <Text style={styles.countText}>
 
                   ({blockedAppCategories.length})
 
@@ -869,115 +782,152 @@ export default function AddGroupPlace() {
 
 const styles = StyleSheet.create({
 
-  header: {
-
-    height: 52,
-
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    justifyContent: "space-between",
-
-    paddingHorizontal: 16,
-
-    borderBottomWidth: StyleSheet.hairlineWidth,
-
+  container: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
   },
 
-  headerTitle: { fontSize: 16, fontWeight: "700" },
+  header: {
+    height: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
+  },
 
-  headerAction: { fontSize: 15, fontWeight: "600" },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#111827",
+  },
 
-  card: { borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1 },
+  headerAction: {
+    fontSize: 16,
+    fontWeight: "600",
+    minWidth: 50,
+    textAlign: "center",
+  },
 
-  label: { fontSize: 13, marginBottom: 8 },
+  cancelText: {
+    color: "#EF4444",
+  },
+
+  saveText: {
+    color: "#0D4093",
+  },
+
+  saveTextDisabled: {
+    color: "#9CA3AF",
+  },
+
+  loadingContainer: {
+    height: 240,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 24,
+  },
+
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+
+  label: {
+    fontSize: 14,
+    color: "#6B7280",
+    marginBottom: 10,
+    fontWeight: "500",
+  },
 
   input: {
-
-    height: 44,
-
-    borderRadius: 10,
-
+    height: 50,
+    borderRadius: 12,
     borderWidth: 1,
-
-    paddingHorizontal: 12,
-
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 16,
+    backgroundColor: "#FFFFFF",
+    color: "#111827",
+    fontSize: 16,
   },
 
   rowBtn: {
-
-    height: 44,
-
-    borderRadius: 10,
-
+    minHeight: 50,
+    borderRadius: 12,
+    backgroundColor: "#F9FAFB",
     flexDirection: "row",
-
     alignItems: "center",
-
-    paddingHorizontal: 12,
-
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
 
-  rowBtnText: { marginLeft: 8, fontSize: 15 },
+  rowBtnText: {
+    marginLeft: 12,
+    color: "#111827",
+    fontSize: 16,
+    flex: 1,
+  },
+
+  rowBtnTextDisabled: {
+    color: "#9CA3AF",
+  },
+
+  countText: {
+    color: "#0D4093",
+    fontWeight: "700",
+  },
+
   // [추가] 정책 선택 UI
 
   policyRow: {
-
     flexDirection: "row",
-
+    gap: 12,
   },
 
   policyChip: {
-
     flex: 1,
-
-    height: 44,
-
-    borderRadius: 10,
-
-    backgroundColor: "#F3F4F6",
-
+    minHeight: 50,
+    borderRadius: 12,
+    backgroundColor: "#F9FAFB",
     alignItems: "center",
-
     justifyContent: "center",
-
-    borderWidth: 1.5,
-
-    borderColor: "#F3F4F6",
-
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
 
   policyChipActive: {
-
-    borderColor: "#2563EB",
-
-    backgroundColor: "#DBEAFE",
-
+    borderColor: "#0D4093",
+    backgroundColor: "rgba(13, 64, 147, 0.08)",
   },
 
   policyText: {
-
     fontSize: 14,
-
     fontWeight: "600",
-
-    color: "#4B5563",
-
+    color: "#6B7280",
+    textAlign: "center",
   },
 
   policyTextActive: {
-
-    color: "#1E40AF",
-
-  },
-
-  // [추가] 칩 간격
-
-  "policyChip:first-child": {
-
-    marginRight: 8,
-
+    color: "#0D4093",
+    fontWeight: "700",
   },
 
   rowBetween: {

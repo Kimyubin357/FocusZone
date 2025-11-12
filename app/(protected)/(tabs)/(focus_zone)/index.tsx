@@ -509,7 +509,7 @@ const moveCameraToPlace = (place: Place) => {
             <Ionicons
               name={item.isActive ? "checkmark-circle" : "close-circle"}
               size={22}
-              color={item.isActive ? "#22C55E" : "#D1D5DB"}
+              color={item.isActive ? "#0D4093" : "#D1D5DB"}
               style={{ marginRight: 8 }}
             />
             <View style={{ flex: 1 }}>
@@ -599,55 +599,136 @@ const moveCameraToPlace = (place: Place) => {
       </TouchableOpacity>
 
       <BottomSheet
-        ref={bottomSheetRef}
-        index={0}
-        snapPoints={snapPoints}
-        enablePanDownToClose={false}
-        enableOverDrag={false}
-        enableContentPanningGesture={false}
-        enableHandlePanningGesture
-        style={styles.bottomSheet}
+  ref={bottomSheetRef}
+  index={0}
+  snapPoints={snapPoints}
+  enablePanDownToClose={false}
+  enableOverDrag={false}
+  style={{
+    backgroundColor: "#F9FAFB",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 10,
+    borderWidth: 0.8,
+    borderColor: "#E5E7EB",
+  }}
+>
+  <BottomSheetView
+    style={{
+      paddingHorizontal: 20,
+      paddingTop: 10,
+      paddingBottom: 28,
+      minHeight: 220,
+    }}
+  >
+    {/* 상단 바 (handle) */}
+    <View style={{ alignItems: "center", marginBottom: 10 }}>
+      <View
+        style={{
+          width: 50,
+          height: 5,
+          backgroundColor: "#0",
+          borderRadius: 3,
+        }}
+      />
+    </View>
+
+    {/* 헤더 영역 */}
+    <View
+      style={{
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 18,
+      }}
+    >
+      <Text
+        style={{
+          fontSize: 20,
+          fontWeight: "700",
+          color: "#0D4093",
+          letterSpacing: -0.5,
+        }}
       >
-        <BottomSheetView style={styles.sheetContent}>
-          <View style={styles.headerRow}>
-            <Text style={styles.title}>집중장소</Text>
-            <View style={styles.headerButtons}>
-              <Text style={styles.countText}>
-                {places.filter((p) => p.isActive).length}/{places.length}
-              </Text>
+        집중장소
+      </Text>
 
-              <TouchableOpacity
-                style={styles.toggleButton}
-                onPress={toggleAllActive}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={isAnyPlaceActive ? "flash-off" : "flash"}
-                  size={16}
-                  color="#fff"
-                />
-              </TouchableOpacity>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <Text
+          style={{
+            fontSize: 15,
+            color: "#6B7280",
+            fontWeight: "600",
+            marginRight: 6,
+          }}
+        >
+          {places.filter((p) => p.isActive).length}/{places.length}
+        </Text>
 
-              <TouchableOpacity
-                style={styles.addButton}
-                onPress={goToAdd}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="add" size={20} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <FlatList
-            data={places}
-            keyExtractor={(item) => item.id}
-            renderItem={renderItem}
-            ListEmptyComponent={renderEmptyList}
-            contentContainerStyle={{ paddingBottom: 16, flexGrow: 1 }}
-            showsVerticalScrollIndicator={false}
+        {/* 전체 on/off 버튼 */}
+        <TouchableOpacity
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            backgroundColor: "#0D4093",
+            justifyContent: "center",
+            alignItems: "center",
+            shadowColor: "#000",
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 3,
+          }}
+          onPress={toggleAllActive}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name={isAnyPlaceActive ? "power-outline" : "power"}
+            size={18}
+            color="#fff"
           />
-        </BottomSheetView>
-      </BottomSheet>
+        </TouchableOpacity>
+
+        {/* 장소 추가 버튼 */}
+        <TouchableOpacity
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            backgroundColor: "#0D4093",
+            justifyContent: "center",
+            alignItems: "center",
+            shadowColor: "#000",
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 3,
+          }}
+          onPress={goToAdd}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="add" size={20} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    </View>
+
+    {/* 리스트 */}
+    <FlatList
+      data={places}
+      keyExtractor={(item) => item.id}
+      renderItem={renderItem}
+      ListEmptyComponent={renderEmptyList}
+      contentContainerStyle={{
+        paddingBottom: 16,
+        flexGrow: 1,
+      }}
+      showsVerticalScrollIndicator={false}
+    />
+  </BottomSheetView>
+</BottomSheet>
+
 
       {/* ⭐️ [수정] group_zone과 동일한 메뉴 */}
       <Modal
@@ -706,47 +787,61 @@ const styles = StyleSheet.create({
   },
 
   bottomSheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: "#EEF2F7",
   },
-  sheetContent: { padding: 16 },
+  sheetContent: {
+    padding: 20,
+    paddingBottom: 32,
+    minHeight: 200,
+  },
 
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 18,
   },
-  title: { fontSize: 18, fontWeight: "bold", color: "#222" },
+  title: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#0D4093",
+    letterSpacing: -0.5,
+  },
 
   headerButtons: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
   },
   countText: {
-    fontSize: 14,
+    fontSize: 15,
     color: "#6B7280",
     fontWeight: "600",
-    marginRight: 4,
+    marginRight: 6,
   },
 
   toggleButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#2563EB",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#0D4093",
     justifyContent: "center",
     alignItems: "center",
   },
 
   addButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#22C55E",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#0D4093",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -762,8 +857,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   selectedCard: {
-    borderColor: "#22C55E",
-    backgroundColor: "#F0FDF4",
+    borderColor: "#0D4093",
+    backgroundColor: "rgba(13,64,147,0.06)",
   },
 
   emptyContainer: {

@@ -556,7 +556,7 @@ function GroupCard({
     ? hexToRgba(colors.border, 0.25)
     : hexToRgba(colors.border, 0.35);
   const chipText = item.isActive ? "#16A34A" : colors.muted;
-  const chipLabel = item.isActive ? "오늘 활성" : "오늘 비활성";
+  const chipLabel = item.isActive ? "활성" : "비활성";
 
   const myRoleLabel = item.myRole === "owner" ? "그룹장" : "그룹원";
   const myRoleColor = item.myRole === "owner" ? colors.tint : colors.muted;

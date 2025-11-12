@@ -54,21 +54,6 @@ export default function AddFocusPlace() {
   });
   const [isSaving, setIsSaving] = useState(false);
 
-   const colors = {
-
-    background: "#FFFFFF",
-
-    card: "#F8F8F8",
-
-    text: "#111111",
-
-    muted: "#777777",
-
-    tint: "#0D4093",
-
-    border: "#E0E0E0",
-
-  };
 
   // ✅ 포커스될 때 지도에서 저장해 둔 임시값(draft) 반영
   useFocusEffect(
@@ -228,22 +213,23 @@ export default function AddFocusPlace() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F5F7FB" }}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={onCancel}>
-          <Text style={[styles.headerAction, { color: "#EF4444" }]}>취소</Text>
+        <TouchableOpacity onPress={onCancel} disabled={isSaving}>
+          <Text style={[styles.headerAction, styles.cancelText]}>취소</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
           {isEditMode ? "집중장소 수정" : "집중장소 등록"}
         </Text>
         <TouchableOpacity
           onPress={onSave}
-          disabled={isSaving} // 👈 [추가]
+          disabled={isSaving}
         >
           <Text
             style={[
               styles.headerAction,
-              { color: isSaving ? colors.muted : colors.tint },
+              styles.saveText,
+              isSaving && styles.saveTextDisabled,
             ]}
           >
             {isSaving ? "저장중..." : "저장"}
@@ -251,12 +237,16 @@ export default function AddFocusPlace() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.card}>
           <Text style={styles.label}>집중장소명</Text>
           <TextInput
             style={styles.input}
             placeholder="예) 도서관, 스터디카페"
+            placeholderTextColor="#9CA3AF"
             value={name}
             onChangeText={setName}
           />
@@ -266,10 +256,10 @@ export default function AddFocusPlace() {
           <Text style={styles.label}>위치</Text>
           <TouchableOpacity
             style={styles.rowBtn}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
             onPress={goToMap}
           >
-            <Ionicons name="navigate-outline" size={18} color="#2563EB" />
+            <Ionicons name="navigate-outline" size={20} color="#0D4093" />
             <Text style={styles.rowBtnText}>
               {address || "주소를 선택하세요"}
             </Text>
@@ -278,21 +268,28 @@ export default function AddFocusPlace() {
 
         <View style={styles.card}>
           <Text style={styles.label}>반지름</Text>
-          <Text style={styles.rowBtnText}>{radius}m</Text>
+          <View style={styles.rowBtn}>
+            <Text style={[
+              styles.rowBtnText,
+              !radius && styles.rowBtnTextDisabled
+            ]}>
+              {radius ? `${radius}m` : "지도에서 설정하세요"}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.label}>차단할 앱</Text>
           <TouchableOpacity
             style={styles.rowBtn}
-            activeOpacity={0.8}
-            onPress={() => goToAppSelect()}
+            activeOpacity={0.7}
+            onPress={goToAppSelect}
           >
-            <Ionicons name="grid-outline" size={18} color="#2563EB" />
+            <Ionicons name="grid-outline" size={20} color="#0D4093" />
             <Text style={styles.rowBtnText}>
               앱 목록{" "}
-              <Text style={{ color: "#2563EB", fontWeight: "bold" }}>
-                {blockedApps.length}
+              <Text style={styles.countText}>
+                ({blockedApps.length})
               </Text>
             </Text>
           </TouchableOpacity>
@@ -303,42 +300,94 @@ export default function AddFocusPlace() {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
   header: {
-    height: 52,
+    height: 56,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
-    backgroundColor: "#fff",
-  },
-  headerTitle: { fontSize: 16, fontWeight: "700", color: "#111827" },
-  headerAction: { fontSize: 15, fontWeight: "600" },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#EEF2F7",
-  },
-  label: { fontSize: 13, color: "#6B7280", marginBottom: 8 },
-  input: {
-    height: 44,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    paddingHorizontal: 12,
     backgroundColor: "#FFFFFF",
   },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  headerAction: {
+    fontSize: 16,
+    fontWeight: "600",
+    minWidth: 50,
+    textAlign: "center",
+  },
+  cancelText: {
+    color: "#EF4444",
+  },
+  saveText: {
+    color: "#0D4093",
+  },
+  saveTextDisabled: {
+    color: "#9CA3AF",
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 24,
+  },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  label: {
+    fontSize: 14,
+    color: "#6B7280",
+    marginBottom: 10,
+    fontWeight: "500",
+  },
+  input: {
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 16,
+    backgroundColor: "#FFFFFF",
+    color: "#111827",
+    fontSize: 16,
+  },
   rowBtn: {
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: "#F3F4F6",
+    minHeight: 50,
+    borderRadius: 12,
+    backgroundColor: "#F9FAFB",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
-  rowBtnText: { marginLeft: 8, color: "#111827", fontSize: 15 },
+  rowBtnText: {
+    marginLeft: 12,
+    color: "#111827",
+    fontSize: 16,
+    flex: 1,
+  },
+  rowBtnTextDisabled: {
+    color: "#9CA3AF",
+  },
+  countText: {
+    color: "#0D4093",
+    fontWeight: "700",
+  },
 });
