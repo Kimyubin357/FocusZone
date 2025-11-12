@@ -1,6 +1,9 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// 1) IMPORTS
+// ─────────────────────────────────────────────────────────────────────────────
 import { Ionicons } from "@expo/vector-icons";
 import BottomSheet, { BottomSheetFlatList } from "@gorhom/bottom-sheet";
-import { useNetInfo } from "@react-native-community/netinfo"; // ⭐️ 추가
+import { useNetInfo } from "@react-native-community/netinfo";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
@@ -14,11 +17,21 @@ import {
   where,
 } from "firebase/firestore";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import MapView, { Circle, Marker, PROVIDER_GOOGLE, Region } from "react-native-maps";
 import { auth, db } from "../../../../firebaseConfig";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 2) TYPES
+// ─────────────────────────────────────────────────────────────────────────────
 type GroupItem = {
   id: string;
   groupName: string;
@@ -33,32 +46,18 @@ type GroupItem = {
   isActive?: boolean;
 };
 
+const DAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3) COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
 export default function GroupZoneMap() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
   const bottomSheetRef = useRef<BottomSheet>(null);
-
-  // ⭐️ [추가] 네트워크 상태 감지
   const netInfo = useNetInfo();
   const isOnline = netInfo.isConnected === true;
-
-  const snapPoints = useMemo(() => ["10%", "50%", "90%"], []);
-
-  // ⭐️ [추가] 네트워크 끊기면 자동으로 이전 화면으로
-  useEffect(() => {
-    if (!isOnline && !loading) {
-      Alert.alert(
-        "네트워크 연결 끊김",
-        "지도 기능은 온라인 상태에서만 사용할 수 있습니다.",
-        [
-          {
-            text: "확인",
-            onPress: () => router.back(),
-          },
-        ]
-      );
-    }
-  }, [isOnline, loading, router]);
+  const snapPoints = useMemo(() => ["3%", "50%", "90%"], []);
 
   const [groups, setGroups] = useState<GroupItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,6 +69,17 @@ export default function GroupZoneMap() {
     longitudeDelta: 0.008,
   });
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // EFFECTS
+  // ─────────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isOnline && !loading) {
+      Alert.alert("네트워크 연결 끊김", "지도 기능은 온라인 상태에서만 사용할 수 있습니다.", [
+        { text: "확인", onPress: () => router.back() },
+      ]);
+    }
+  }, [isOnline, loading]);
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       if (!user) {
@@ -79,7 +89,7 @@ export default function GroupZoneMap() {
       }
       const unsubscribeGroups = loadGroups(user.uid);
       return () => {
-        if (unsubscribeGroups) unsubscribeGroups.then(unsub => unsub?.());
+        if (unsubscribeGroups) unsubscribeGroups.then((unsub) => unsub?.());
       };
     });
     return unsub;
@@ -104,10 +114,7 @@ export default function GroupZoneMap() {
       );
 
       const groupsColRef = collection(db, "groupLocations");
-      const groupsQuery = query(
-        groupsColRef,
-        where(documentId(), "in", myGroupIds)
-      );
+      const groupsQuery = query(groupsColRef, where(documentId(), "in", myGroupIds));
 
       const unsubscribe = onSnapshot(groupsQuery, async (groupsSnap) => {
         const ownerIds = [
@@ -118,10 +125,7 @@ export default function GroupZoneMap() {
 
         let ownersMap = new Map<string, string>();
         if (ownerIds.length > 0) {
-          const usersQuery = query(
-            collection(db, "users"),
-            where(documentId(), "in", ownerIds)
-          );
+          const usersQuery = query(collection(db, "users"), where(documentId(), "in", ownerIds));
           const usersSnap = await getDocs(usersQuery);
           usersSnap.forEach((doc) => {
             ownersMap.set(doc.id, doc.data().displayName ?? "그룹장");
@@ -178,37 +182,23 @@ export default function GroupZoneMap() {
     })();
   }, []);
 
-  const animateTo = (
-    lat: number,
-    lng: number,
-    latDelta = 0.01,
-    lngDelta = 0.01
-  ) => {
-    // region 상태도 갱신
-    setRegion({
-      latitude: lat,
-      longitude: lng,
-      latitudeDelta: latDelta,
-      longitudeDelta: lngDelta,
-    });
-    // 지도 카메라 부드럽게 이동
+  // 지도 이동
+  const animateTo = (lat: number, lng: number, latDelta = 0.01, lngDelta = 0.01) => {
+    setRegion({ latitude: lat, longitude: lng, latitudeDelta: latDelta, longitudeDelta: lngDelta });
     mapRef.current?.animateCamera(
-      {
-        center: { latitude: lat, longitude: lng },
-        zoom: 17,
-      },
+      { center: { latitude: lat, longitude: lng }, zoom: 17 },
       { duration: 1200 }
     );
   };
 
-  // 그룹 카드 클릭 시
+  // 그룹 클릭 시 이동
   const onGroupPress = (group: GroupItem) => {
     if (group.latitude && group.longitude) {
-      animateTo(group.latitude, group.longitude, region.latitudeDelta, region.longitudeDelta);
+      animateTo(group.latitude, group.longitude);
     }
   };
 
-  // 현재 위치 버튼
+  // 현재 위치로 이동
   const getCurrentLocation = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -219,43 +209,80 @@ export default function GroupZoneMap() {
       const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
-      animateTo(loc.coords.latitude, loc.coords.longitude, region.latitudeDelta, region.longitudeDelta);
+      animateTo(loc.coords.latitude, loc.coords.longitude);
     } catch (e) {
       console.error(e);
       Alert.alert("오류", "현재 위치를 가져올 수 없습니다.");
     }
   };
 
-  const renderGroupCard = ({ item }: { item: GroupItem }) => (
-    <TouchableOpacity
-      style={[
-        styles.groupCard,
-        { opacity: item.isActive === false ? 0.6 : 1 }
-      ]}
-      onPress={() => onGroupPress(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.cardContent}>
-        <View style={styles.cardHeader}>
+  // ─────────────────────────────────────────────────────────────────────────────
+  // GROUP CARD (리디자인)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const renderGroupCard = ({ item }: { item: GroupItem }) => {
+    const isActive = item.isActive !== false;
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.groupCard,
+          {
+            borderColor: isActive ? "#0D4093" : "#CBD5E1",
+            backgroundColor: isActive ? "#F8FAFC" : "#F1F5F9",
+            opacity: isActive ? 1 : 0.7,
+          },
+        ]}
+        activeOpacity={0.85}
+        onPress={() => onGroupPress(item)}
+      >
+        {/* 상단: 이름 + 상태 */}
+        <View style={styles.cardTopRow}>
           <Text style={styles.groupName} numberOfLines={1}>
             {item.groupName}
-            {item.isActive === false && (
-              <Text style={{ fontSize: 12, color: "#999" }}> (비활성화)</Text>
-            )}
           </Text>
-          <Ionicons name="chevron-forward" size={20} color="#999" />
-        </View>
-        <Text style={styles.address} numberOfLines={1}>
-          {item.address}
-        </Text>
-        {item.isActive === false && (
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>비활성화</Text>
+          <View style={[styles.statusPill, { backgroundColor: isActive ? "#E0E7FF" : "#FEE2E2" }]}>
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: "700",
+                color: isActive ? "#0D4093" : "#DC2626",
+              }}
+            >
+              {isActive ? "활성" : "비활성"}
+            </Text>
           </View>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
+        </View>
+
+        {/* 주소 */}
+        <Text style={styles.address} numberOfLines={1}>
+          {item.address || "주소 정보 없음"}
+        </Text>
+
+        {/* 하단: 그룹장, 인원, 요일, 이동 */}
+        <View style={styles.cardBottomRow}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Ionicons name="person-outline" size={14} color="#0D4093" />
+            <Text style={styles.ownerText}> {item.ownerName}</Text>
+          </View>
+
+          <View style={{ flexDirection: "row", alignItems: "center", marginLeft: 10 }}>
+            <Ionicons name="people-outline" size={14} color="#0D4093" />
+            <Text style={styles.memberText}> {item.memberCount}명</Text>
+          </View>
+
+          <View style={{ flex: 1 }} />
+
+          {item.activeDays && item.activeDays.length > 0 && (
+            <Text style={styles.daysText}>{item.activeDays.map((d) => DAYS[d]).join("·")}</Text>
+          )}
+
+          <TouchableOpacity style={styles.navigateButton} onPress={() => onGroupPress(item)}>
+            <Ionicons name="navigate-outline" size={18} color="#0D4093" />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
@@ -266,6 +293,9 @@ export default function GroupZoneMap() {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
@@ -285,28 +315,19 @@ export default function GroupZoneMap() {
             .filter((g) => g.latitude && g.longitude)
             .map((group) => {
               const isActive = group.isActive !== false;
-              const strokeColor = isActive ? "#0D4093" : "#9CA3AF";
-              const fillColor = isActive 
-                ? "rgba(13, 64, 147, 0.2)" 
-                : "rgba(156, 163, 175, 0.2)";
-              
               return (
                 <React.Fragment key={group.id}>
                   <Circle
-                    center={{
-                      latitude: group.latitude!,
-                      longitude: group.longitude!,
-                    }}
+                    center={{ latitude: group.latitude!, longitude: group.longitude! }}
                     radius={group.radius || 400}
                     strokeWidth={2}
-                    strokeColor={strokeColor}
-                    fillColor={fillColor}
+                    strokeColor={isActive ? "#0D4093" : "#9CA3AF"}
+                    fillColor={
+                      isActive ? "rgba(13,64,147,0.2)" : "rgba(156,163,175,0.2)"
+                    }
                   />
                   <Marker
-                    coordinate={{
-                      latitude: group.latitude!,
-                      longitude: group.longitude!,
-                    }}
+                    coordinate={{ latitude: group.latitude!, longitude: group.longitude! }}
                     title={group.groupName}
                     description={group.address}
                     opacity={isActive ? 1 : 0.6}
@@ -316,14 +337,12 @@ export default function GroupZoneMap() {
             })}
         </MapView>
 
-        <TouchableOpacity
-          style={styles.locationButton}
-          onPress={getCurrentLocation}
-          activeOpacity={0.8}
-        >
+        {/* 현재 위치 버튼 */}
+        <TouchableOpacity style={styles.locationButton} onPress={getCurrentLocation}>
           <Ionicons name="navigate-outline" size={22} color="#000" />
         </TouchableOpacity>
 
+        {/* 하단 시트 */}
         <BottomSheet
           ref={bottomSheetRef}
           index={0}
@@ -335,8 +354,9 @@ export default function GroupZoneMap() {
         >
           <View style={styles.sheetHeader}>
             <Text style={styles.title}>그룹장소</Text>
-            <Text style={styles.countText}>{groups.length}/{groups.length}</Text>
+            <Text style={styles.countText}>{groups.length}개</Text>
           </View>
+
           <BottomSheetFlatList
             data={groups}
             renderItem={renderGroupCard}
@@ -356,13 +376,12 @@ export default function GroupZoneMap() {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 4) STYLES
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  map: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  map: { flex: 1 },
 
   locationButton: {
     position: "absolute",
@@ -383,9 +402,9 @@ const styles = StyleSheet.create({
 
   bottomSheet: {
     shadowColor: "#000",
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 5,
+    elevation: 4,
   },
   sheetHeader: {
     flexDirection: "row",
@@ -397,45 +416,64 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#222",
+    color: "#0D4093",
   },
   countText: {
-    fontSize: 16,
+    fontSize: 15,
     color: "#0D4093",
     fontWeight: "600",
   },
   listContent: {
     paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingBottom: 30,
   },
+
+  // ─ 그룹 카드 ─
   groupCard: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1.2,
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  cardContent: {
-    flex: 1,
-  },
-  cardHeader: {
+  cardTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 6,
   },
   groupName: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#111",
+    color: "#111827",
     flex: 1,
     marginRight: 8,
   },
-  address: {
-    fontSize: 14,
-    color: "#666",
+  statusPill: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
+  address: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginBottom: 8,
+  },
+  cardBottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 4,
+  },
+  ownerText: { fontSize: 13, color: "#334155" },
+  memberText: { fontSize: 13, color: "#334155" },
+  daysText: { fontSize: 12, color: "#475569", fontWeight: "600" },
+  navigateButton: { marginLeft: 8, padding: 4 },
+
+  // ─ Empty ─
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
@@ -443,22 +481,9 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
     color: "#6B7280",
     marginTop: 12,
-  },
-  statusBadge: {
-    alignSelf: "flex-start",
-    marginTop: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: "#FEE2E2",
-    borderRadius: 6,
-  },
-  statusBadgeText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#DC2626",
   },
 });
