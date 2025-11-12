@@ -6,7 +6,7 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#000000',//탭바 포커스 될 때 바뀌는 색깔
+        tabBarActiveTintColor: '#0D4093',//탭바 포커스 될 때 바뀌는 색깔
         headerShown: false, // 각 탭의 헤더를 숨김
       }}
     >

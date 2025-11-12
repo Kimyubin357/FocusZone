@@ -1,4 +1,3 @@
-//  app/(auth)/set_user_info.tsx
 import { Ionicons } from "@expo/vector-icons";
 import {
   collection,
@@ -28,12 +27,18 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { auth, db } from "../../firebaseConfig";
 import { AuthContext } from "../../src/services/auth/authContext";
 
+// 앱 테마 색상 정의
+const THEME_COLOR = "#0D4093";
+
 export default function SetUserInfo() {
   const [nickname, setNickname] = useState("");
   const [loading, setLoading] = useState(false);
   const { logIn } = useContext(AuthContext);
 
-  // UserType의 provider 타입을 정의 (AuthContext와 동일하게)
+  // ✅ Input 포커스 상태 추가
+  const [nicknameFocused, setNicknameFocused] = useState(false);
+
+  // UserType의 provider 타입을 정의
   type AppProvider = "google" | "naver" | "kakao" | "apple" | "email";
 
   // 닉네임 규칙 검사
@@ -65,17 +70,10 @@ export default function SetUserInfo() {
   const getAppProvider = (firebaseProviderId: string): AppProvider => {
     if (firebaseProviderId.includes("google.com")) return "google";
     if (firebaseProviderId.includes("apple.com")) return "apple";
-
-    // 이메일/비밀번호 가입 시 providerId는 "password"입니다.
     if (firebaseProviderId === "password") return "email";
-
-    // (추후 Kakao/Naver 구현 시)
-    // if (firebaseProviderId === "kakao.com") return "kakao";
-    // if (firebaseProviderId === "naver.com") return "naver";
-
-    // 기본값 (이메일 가입으로 처리)
     return "email";
   };
+
   // Firestore에 저장
   const saveUserProfile = async (finalNick: string) => {
     if (!auth.currentUser) {
@@ -84,25 +82,21 @@ export default function SetUserInfo() {
     }
 
     const { uid, email, photoURL } = auth.currentUser;
-
-    // Firebase Auth에서 실제 providerId를 가져옵니다. (예: "google.com", "password")
-    const firebaseProviderId = auth.currentUser.providerData[0]?.providerId || "password";
-
-    // 앱에서 사용할 provider 타입으로 변환합니다. (예: "google", "email")
+    const firebaseProviderId =
+      auth.currentUser.providerData[0]?.providerId || "password";
     const appProvider = getAppProvider(firebaseProviderId);
 
     const userData_for_firebase = {
       uid,
-      email: email ?? "", // 소셜 로그인은 이메일이 null일 수 있음 (특히 Apple)
+      email: email ?? "",
       nickname: finalNick,
       nicknameLower: finalNick.toLowerCase(),
-      profileImage: photoURL || "", // 소셜 로그인 프로필 사진 활용
-      provider: appProvider, // "email", "google.com", "apple.com", "kakao.com" 등
+      profileImage: photoURL || "",
+      provider: appProvider,
       createdAt: serverTimestamp(),
     };
     await setDoc(doc(db, "users", uid), userData_for_firebase);
 
-    // AuthContext에 전달할 데이터
     const userData = {
       uid,
       email: email ?? "",
@@ -114,10 +108,7 @@ export default function SetUserInfo() {
   };
 
   const handleContinue = async () => {
-    if (loading) return;
-
-    const trimmedNick = nickname.trim();
-    if (!nicknameValid) {
+    if (loading || !nicknameValid) {
       Alert.alert(
         "닉네임 확인",
         "닉네임은 2~12자, 한글/영문/숫자/밑줄(_)만 가능합니다."
@@ -126,10 +117,12 @@ export default function SetUserInfo() {
     }
 
     setLoading(true);
+    const trimmedNick = nickname.trim();
     try {
       const available = await checkNicknameDuplicate(trimmedNick);
       if (!available) {
         Alert.alert("중복 닉네임", "이미 사용 중인 닉네임입니다.");
+        setLoading(false); // ✅ 중복 시 로딩 중지
         return;
       }
 
@@ -138,9 +131,9 @@ export default function SetUserInfo() {
     } catch (e) {
       console.log("닉네임 저장 오류:", e);
       Alert.alert("오류", "닉네임 저장에 실패했습니다.");
-    } finally {
-      setLoading(false);
+      setLoading(false); // ✅ 에러 시 로딩 중지
     }
+    // setLoading(false)는 성공 시 logIn -> 라우팅 후 필요 없음
   };
 
   const handleExit = async () => {
@@ -148,70 +141,73 @@ export default function SetUserInfo() {
     try {
       const userData = await saveUserProfile(autoNick);
       logIn(userData!);
-
     } catch (e) {
       console.log("자동 닉네임 저장 오류:", e);
     }
   };
+
+  // 안드로이드 뒤로가기 버튼 방지
   useEffect(() => {
     const backHandler = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
-        // 이 화면에서는 뒤로가기를 항상 막습니다.
-        // true를 반환하면 기본 동작(앱 종료 등)을 막습니다.
-        return true; 
+        return true; // 뒤로가기 막기
       }
     );
-
-    // 컴포넌트가 사라질 때 리스너를 제거합니다.
     return () => backHandler.remove();
-  }, []); // 빈 배열로 마운트 시 1회만 실행
+  }, []);
 
   return (
     <TouchableWithoutFeedback onPress={handleDismissKeyboard} accessible={false}>
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
+        {/* ✅ 'space-between' 레이아웃 적용 */}
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
           style={styles.keyboardAvoidingView}
         >
-          {/* 헤더 */}
-          <View style={styles.header}>
-            <TouchableOpacity onPress={handleExit}>
-              <Ionicons name="close-outline" size={30} color="black" />
-            </TouchableOpacity>
+          {/* 상단 (헤더, 폼) */}
+          <View style={styles.topContainer}>
+            <View style={styles.header}>
+              <TouchableOpacity onPress={handleExit} style={styles.closeButton}>
+                <Ionicons name="close-outline" size={30} color="black" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.title}>누구라고 해야 할까요?</Text>
+
+            {/* ✅ Input 스타일 수정 (포커스 적용) */}
+            <View style={[
+              styles.inputWrapper,
+              { borderBottomColor: nicknameFocused ? THEME_COLOR : '#ccc' }
+            ]}>
+              <TextInput
+                style={styles.input}
+                placeholder="닉네임 (2~12자, 한글/영문/숫자/_)"
+                placeholderTextColor="grey"
+                autoCapitalize="none"
+                value={nickname}
+                onChangeText={setNickname}
+                returnKeyType="done"
+                onFocus={() => setNicknameFocused(true)}
+                onBlur={() => setNicknameFocused(false)}
+              />
+            </View>
+
+            {!nicknameValid && nickname.length > 0 && (
+              <Text style={styles.errorText}>
+                닉네임은 2~12자, 한글/영문/숫자/밑줄(_)만 가능합니다.
+              </Text>
+            )}
           </View>
 
-          {/* 제목 */}
-          <Text style={styles.title}>누구라고 해야 할까요?</Text>
-
-          {/* 입력창 */}
-          <View style={styles.inputWrapper}>
-            <TextInput
-              style={styles.input}
-              placeholder="닉네임 (2~12자, 한글/영문/숫자/_)"
-              placeholderTextColor="grey"
-              autoCapitalize="none"
-              value={nickname}
-              onChangeText={setNickname}
-              returnKeyType="done"
-            />
-          </View>
-
-          {/* 경고문구 */}
-          {!nicknameValid && nickname.length > 0 && (
-            <Text style={styles.errorText}>
-              닉네임은 2~12자, 한글/영문/숫자/밑줄(_)만 가능합니다.
-            </Text>
-          )}
-
-          {/* 버튼 */}
+          {/* 하단 (버튼) */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
               style={[
-                styles.continueButton,
+                styles.continueButton, // ✅ 'pill-shape' 적용
                 {
-                  backgroundColor: nicknameValid && !loading ? "#2196F3" : "#ccc",
+                  backgroundColor: nicknameValid && !loading ? THEME_COLOR : "#ccc", // ✅ 테마 색상 적용
                 },
               ]}
               onPress={handleContinue}
@@ -229,55 +225,74 @@ export default function SetUserInfo() {
   );
 }
 
+// ✅ 스타일 수정
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
-    padding: 20,
+    paddingHorizontal: 20, // 가로 여백
   },
   keyboardAvoidingView: {
     flex: 1,
+    width: '100%',
+    justifyContent: 'space-between', // 상단/하단 분리
+  },
+  topContainer: {
+    width: '100%',
+    alignItems: 'center',
   },
   header: {
-    alignItems: "flex-start",
+    width: '100%',
+    alignItems: 'flex-start', // 'X' 버튼을 왼쪽으로
+    marginTop: 10,
+  },
+  closeButton: {
+    padding: 10, // 터치 영역 확보
   },
   title: {
-    fontSize: 22,
+    fontSize: 32, // 타이틀 크기 통일
     fontWeight: "bold",
     marginTop: 40,
-    marginBottom: 30,
+    marginBottom: 50, // 인풋과의 간격
     textAlign: "center",
   },
   inputWrapper: {
-    borderBottomWidth: 1,
+    borderBottomWidth: 2, // 굵기 조절
     borderBottomColor: "#ccc",
-    marginHorizontal: 20,
+    width: '100%',
+    maxWidth: 350,
     marginBottom: 10,
   },
   input: {
     fontSize: 18,
-    paddingVertical: 10,
+    paddingVertical: 12,
+    height: 50, // 높이 확보
+    textAlign: 'center', // 닉네임은 중앙 정렬
   },
   errorText: {
     color: "red",
     fontSize: 13,
-    marginLeft: 20,
-    marginBottom: 10,
+    textAlign: 'center',
+    width: '100%',
+    maxWidth: 350,
+    marginTop: 5,
   },
   buttonContainer: {
-    marginTop: "auto",
-    marginBottom: 40,
-    paddingHorizontal: 20,
+    width: '100%',
+    maxWidth: 350,
+    alignSelf: 'center',
+    paddingBottom: 20, // 하단 여백
   },
   continueButton: {
     width: "100%",
-    paddingVertical: 15,
-    borderRadius: 10,
+    height: 50, // 'pill-shape' 높이
+    borderRadius: 25, // 'pill-shape' 둥근 모서리
     alignItems: "center",
+    justifyContent: 'center',
   },
   continueButtonText: {
     color: "#fff",
-    fontSize: 18,
+    fontSize: 16, // 폰트 크기 통일
     fontWeight: "bold",
   },
 });

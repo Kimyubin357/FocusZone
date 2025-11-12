@@ -5,6 +5,8 @@ import React, { useEffect, useState } from "react";
 import {
   Alert,
   Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   StatusBar,
   StyleSheet,
   Text,
@@ -58,7 +60,7 @@ export default function EmailSignUp() {
 
       setErrorMessage(null);
       // set_user_info.tsx 화면으로 이동
-      router.push("/(auth)/set_user_info");
+      router.replace("/(auth)/set_user_info");
     } catch (error: any) {
       let msg = "회원가입에 실패했습니다. 잠시 후 다시 시도해 주세요.";
       switch (error.code) {
@@ -88,12 +90,16 @@ export default function EmailSignUp() {
     <TouchableWithoutFeedback onPress={handleDismissKeyboard} accessible={false}>
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
-        
+        <KeyboardAvoidingView
+                  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                  style={styles.keyboardAvoidingView}
+                >
           {/* 상단 (헤더, 폼) */}
           <View style={styles.topContainer}>
             
 
             <Text style={styles.title}>이메일로 가입</Text>
+
 
             <View style={styles.inputContainer}>
               {/* 이메일 */}
@@ -210,6 +216,7 @@ export default function EmailSignUp() {
               </Text>
             </TouchableOpacity>
           </View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </TouchableWithoutFeedback>
   );
@@ -295,7 +302,6 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 350,
     alignSelf: "center", // 하단 버튼 중앙 정렬
-    paddingTop: 270, // 하단 여백
   },
   continueButton: {
     width: "100%",
