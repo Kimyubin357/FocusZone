@@ -255,6 +255,13 @@ export default function KakaoMapScreen() {
     };
     setRegion(next);
     mapRef.current?.animateToRegion(next, 250);
+    mapRef.current?.animateCamera(
+    {
+      center: { latitude: lat, longitude: lng },
+      zoom: 17, // 확대 정도 (15~18 사이 조정 가능)
+    },
+    { duration: 2000 } // 1초 동안 부드럽게 이동
+  );
   };
 
   const handleSliderChange = (value: number) => setRadius(value);
@@ -472,7 +479,8 @@ export default function KakaoMapScreen() {
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
         provider={PROVIDER_GOOGLE}
-        region={region}
+        initialRegion={region}
+        
         onRegionChangeComplete={handleRegionChangeComplete}
         onPress={onMapPress}
         mapType="standard"
@@ -480,7 +488,7 @@ export default function KakaoMapScreen() {
         showsMyLocationButton={false}
         userLocationAnnotationTitle="내 위치"
         userLocationPriority="high"
-        followsUserLocation={true}
+        followsUserLocation={false}
       >
         {/* 선택 영역(원) */}
         {isValidCoord(selectedLocation.latitude, selectedLocation.longitude) && (

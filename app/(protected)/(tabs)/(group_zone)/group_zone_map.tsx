@@ -44,7 +44,7 @@ export default function GroupZoneMap() {
   const netInfo = useNetInfo();
   const isOnline = netInfo.isConnected === true;
 
-  const snapPoints = useMemo(() => ["5%", "50%", "90%"], []);
+  const snapPoints = useMemo(() => ["3%", "50%", "90%"], []);
 
   // ⭐️ [추가] 네트워크 끊기면 자동으로 이전 화면으로
   useEffect(() => {
