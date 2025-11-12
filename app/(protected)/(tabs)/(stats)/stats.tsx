@@ -6,7 +6,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import type { Granularity } from "../../../../src/features/stats/types";
 import { useStats } from "../../../../src/features/stats/useStats";
@@ -15,14 +23,12 @@ import PeriodToggle from "../../../../src/features/ui/PeriodToggle";
 import { toYMD } from "../../../../src/services/lib/time";
 
 /* ───────── 공통 유틸 ───────── */
-function fmtHms(ms: number) {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(
-    s
-  ).padStart(2, "0")}`;
+/** 4h 55m 처럼 ‘분’까지만 표기 */
+function fmtHmShort(ms: number) {
+  const totalMin = Math.max(0, Math.floor(ms / 60000));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 function sameYmd(a: Date, b: Date) {
   return (
@@ -408,37 +414,49 @@ function useLiveMinutesForCurrentHour(
 // [MONTH][ADD] 이번 달 화면일 때 진행중 세션 실시간 합(ms)
 
 /* ───────── Day 그래프(시간별) ───────── */
+const DAY_CHART_HEIGHT = 180;
+
 function DayHourBars({ minutesByHour }: { minutesByHour: number[] }) {
+  const currentHour = new Date().getHours();
   return (
-    <View style={{ marginTop: 20, alignItems: "center" }}>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "flex-end",
-          justifyContent: "space-between",
-          width: "100%",
-          height: 160,
-        }}
-      >
+    <View style={chartStyles.container}>
+      <View style={[chartStyles.chartWrapper, { height: DAY_CHART_HEIGHT }]}>
         {Array.from({ length: 24 }).map((_, h) => {
           const min = Math.max(0, Math.min(60, minutesByHour[h] || 0));
-          const pct = (min / 60) * 100;
+          const barH = Math.floor((min / 60) * (DAY_CHART_HEIGHT - 20));
+          const isActive = min > 0;
+          const isCurrentHour = h === currentHour;
+          // 시간 라벨: 0, 13, 23만 표시
+          const showLabel = h === 0 || h === 12 || h === 23;
           return (
             <View
               key={`hour-${h}`}
-              style={{ alignItems: "center", flex: 1, marginHorizontal: 2 }}
+              style={[chartStyles.barContainer, { height: DAY_CHART_HEIGHT }]}
             >
               <View
-                style={{
-                  width: 10,
-                  height: `${pct}%`,
-                  backgroundColor: "#10B981",
-                  borderRadius: 3,
-                }}
+                style={[
+                  chartStyles.bar,
+                  {
+                    height: Math.max(barH, isActive ? 4 : 0),
+                    backgroundColor: isActive ? "#0D4093" : "#E5E7EB",
+                    borderWidth: isCurrentHour ? 1 : 0,
+                    borderColor: isCurrentHour ? "#0D4093" : "transparent",
+                  },
+                ]}
               />
-              <Text style={{ marginTop: 4, fontSize: 9, color: "#6B7280" }}>
-                {h}
-              </Text>
+              {showLabel ? (
+                <Text style={[
+                  chartStyles.barLabel,
+                  { 
+                    color: isCurrentHour ? "#0D4093" : "#6B7280", 
+                    fontWeight: isCurrentHour ? "600" : "400" 
+                  }
+                ]}>
+                  {h}
+                </Text>
+              ) : (
+                <Text style={chartStyles.barLabel}>{" "}</Text>
+              )}
             </View>
           );
         })}
@@ -448,36 +466,41 @@ function DayHourBars({ minutesByHour }: { minutesByHour: number[] }) {
 }
 
 /* ───────── Week 그래프(요일, 24h=100%) ───────── */
+const WEEK_CHART_HEIGHT = 180;
 function WeekBarsKR({ msByDay }: { msByDay: number[] }) {
   const labels = ["일", "월", "화", "수", "목", "금", "토"];
   const DAY_MS = 24 * 60 * 60 * 1000;
+  const todayIdx = new Date().getDay();
+  
   return (
-    <View style={{ marginTop: 16 }}>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "flex-end",
-          justifyContent: "space-between",
-          height: 160,
-        }}
-      >
+    <View style={chartStyles.container}>
+      <View style={[chartStyles.chartWrapper, { height: WEEK_CHART_HEIGHT }]}>
         {msByDay.map((v, i) => {
           const clamped = Math.min(DAY_MS, Math.max(0, v || 0));
-          const pct = (clamped / DAY_MS) * 100;
+          const barH = Math.floor((clamped / DAY_MS) * (WEEK_CHART_HEIGHT - 20));
+          const isActive = clamped > 0;
+          const isToday = i === todayIdx;
           return (
             <View
               key={`w-${i}`}
-              style={{ alignItems: "center", flex: 1, marginHorizontal: 3 }}
+              style={[chartStyles.weekBarContainer, { height: WEEK_CHART_HEIGHT }]}
             >
               <View
-                style={{
-                  width: 16,
-                  height: `${pct}%`,
-                  backgroundColor: "#10B981",
-                  borderRadius: 4,
-                }}
+                style={[
+                  chartStyles.weekBar,
+                  {
+                    height: Math.max(barH, isActive ? 4 : 0),
+                    backgroundColor: isActive ? "#0D4093" : "#E5E7EB",
+                  },
+                ]}
               />
-              <Text style={{ marginTop: 6, fontSize: 12, color: "#6B7280" }}>
+              <Text style={[
+                chartStyles.weekBarLabel,
+                { 
+                  color: isToday ? "#0D4093" : "#6B7280",
+                  fontWeight: isToday ? "600" : "400"
+                }
+              ]}>
                 {labels[i]}
               </Text>
             </View>
@@ -609,7 +632,9 @@ function PaginatedStayList({
   const goPage = (p: number) => setPage(Math.min(totalPages, Math.max(1, p)));
   if (!rows || rows.length === 0) {
     return (
-      <Text style={{ color: "#9CA3AF", marginTop: 6 }}>기록이 없습니다.</Text>
+      <View style={stayStyles.emptyContainer}>
+        <Text style={stayStyles.emptyText}>기록이 없습니다.</Text>
+      </View>
     );
   }
   return (
@@ -783,8 +808,8 @@ function MonthCalendar({
                     monthStyles.box,
                     {
                       backgroundColor: color,
-                      borderColor: isToday ? "#111827" : "#E5E7EB",
-                      borderWidth: isToday ? 2 : StyleSheet.hairlineWidth,
+                      borderColor: isToday ? "#0D4093" : (hours > 0 ? color : "#E5E7EB"),
+                      borderWidth: isToday ? 2 : (hours > 0 ? 1 : 1),
                     },
                   ]}
                 >
@@ -793,7 +818,14 @@ function MonthCalendar({
                     <Text
                       style={[
                         monthStyles.dayNum,
-                        { color: hours > 0 ? "#0B3B2E" : "#6B7280" },
+                        { 
+                          color: isToday 
+                            ? "#0D4093" 
+                            : hours > 0 
+                            ? (hours >= 12 ? "#FFFFFF" : "#0B3B2E")
+                            : "#9CA3AF",
+                          fontWeight: isToday ? "700" : "600",
+                        },
                       ]}
                     >
                       {c.num}
@@ -857,7 +889,7 @@ export default function Stats() {
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [anchor, setAnchor] = useState(new Date());
   const unifiedTotalMs = useMergedTotalMsForPeriod(userId, anchor, granularity);
-  const formattedTotal = fmtHms(unifiedTotalMs);
+  const formattedTotal = fmtHmShort(unifiedTotalMs);
 
   const stats = useStats({
     userId,
@@ -930,13 +962,7 @@ export default function Stats() {
     granularity === "week" ? weekOfMonthLabel(anchor) : undefined;
 
   // [NAV] 오늘/이번주/이번달 점프 버튼
-  const jumpLabel =
-    granularity === "day"
-      ? "오늘로 가기"
-      : granularity === "week"
-      ? "이번 주로"
-      : "이번 달로";
-  const onJump = () => setAnchor(new Date());
+
 
   // [MONTH][ADDED] monthGrid + 오늘 라이브 반영
   const monthGridRaw: { date: string; totalMs: number }[] =
@@ -944,61 +970,68 @@ export default function Stats() {
   const liveTodayMsForMonth = sameYm(anchor, new Date()) ? liveTodayMs : 0; // 현재 달이면 오늘칸 실시간 가산
 
   const dayRows = useDaySessionsLive(userId, anchor, granularity);
+  const topPad =
+    (Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0) + 8;
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+    <View style={[styles.container, { paddingTop: topPad }]}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.header}>
           <PeriodToggle value={granularity} onChange={setGranularity} />
-          <View style={{ height: 8 }} />
+          <View style={{ height: 12 }} />
           <DatePager
             anchor={anchor}
             granularity={granularity}
             onChange={setAnchor}
             onToday={() => setAnchor(new Date())}
           />
-          <Pressable style={styles.jumpBtn} onPress={onJump}>
-            <Text style={styles.jumpBtnText}>{jumpLabel}</Text>
-          </Pressable>
+
           <LiveNowBadge userId={userId} placeId={placeId} />
         </View>
 
         {(stats.loading as boolean) ? (
           <View style={styles.center}>
-            <Text style={{ color: "#6B7280" }}>로딩중</Text>
+            <Text style={styles.loadingText}>로딩중...</Text>
           </View>
         ) : (
           <View style={styles.body}>
             <View style={styles.summary}>
-              {granularity === "week" && (
-                <Text style={styles.weekMeta}>{weekLabel}</Text>
-              )}
+              
               <Text style={styles.summaryTitle}>{title}</Text>
               <Text style={styles.summaryValue}>{formattedTotal}</Text>
             </View>
 
             {/* Day 그래프 */}
             {granularity === "day" && (
-              <DayHourBars minutesByHour={minutesByHour} />
+              <View style={styles.chartCard}>
+                <DayHourBars minutesByHour={minutesByHour} />
+              </View>
             )}
 
             {/* Week 그래프 */}
             {granularity === "week" && weekBars && (
-              <WeekBarsKR msByDay={weekBars} />
+              <View style={styles.chartCard}>
+                <WeekBarsKR msByDay={weekBars} />
+              </View>
             )}
 
             {/* [MONTH][ADDED] 월 달력 히트맵 */}
             {granularity === "month" && (
-              <MonthCalendar
-                anchor={anchor}
-                monthGrid={monthGridRaw}
-                liveTodayMsForMonth={liveTodayMsForMonth}
-              />
+              <View style={styles.chartCard}>
+                <MonthCalendar
+                  anchor={anchor}
+                  monthGrid={monthGridRaw}
+                  liveTodayMsForMonth={liveTodayMsForMonth}
+                />
+              </View>
             )}
 
             {/* Day에서만 '진입 & 이탈 시간' */}
             {granularity === "day" && (
-              <View style={{ marginTop: 12 }}>
-                <Text style={styles.sectionTitle}>진입 & 이탈 시간</Text>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>기록</Text>
                 <PaginatedStayList rows={dayRows} />
               </View>
             )}
@@ -1055,101 +1088,223 @@ function LiveNowBadge({
       <View style={styles.liveDot} />
       <Text style={styles.liveTitle}>진행 중</Text>
       <Text style={{ width: 6 }} />
-      <Text style={styles.liveTimer}>{fmtHms(elapsed)}</Text>
+      <Text style={styles.liveTimer}>{fmtHmShort(elapsed)}</Text>
     </View>
   );
 }
 
 /* ───────── Styles ───────── */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "white", marginTop: 15 },
-  scrollContent: { padding: 16, paddingBottom: 40 },
-  header: { marginBottom: 8 },
+  container: { 
+    flex: 1, 
+    backgroundColor: "#FFFFFF" 
+  },
+  scrollContent: { 
+    padding: 16, 
+    paddingBottom: 40 
+  },
+  header: { 
+    marginBottom: 20 
+  },
   center: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 40,
+    paddingVertical: 60,
   },
-  body: {},
+  loadingText: {
+    color: "#6B7280",
+    fontSize: 14,
+  },
+  body: {
+    gap: 16,
+  },
   jumpBtn: {
     alignSelf: "center",
-    marginTop: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-    backgroundColor: "#111827",
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: "#0D4093",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   jumpBtnText: {
-    color: "white",
-    fontSize: 12,
-    fontWeight: "700",
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
   },
   summary: {
-    backgroundColor: "#F9FAFB",
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: "#FFFFFF",
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1,
     borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    marginBottom: 4,
+    alignItems: "center"
   },
   weekMeta: {
-    fontSize: 12,
+    fontSize: 13,
     color: "#6B7280",
-    marginBottom: 4,
+    marginBottom: 8,
+    fontWeight: "500",
   },
-  summaryTitle: { fontSize: 14, color: "#6B7280", marginBottom: 6 },
-  summaryValue: { fontSize: 28, fontWeight: "bold", color: "#111827" },
+  summaryTitle: { 
+    fontSize: 14, 
+    color: "#6B7280", 
+    marginBottom: 8,
+    fontWeight: "500",
+  },
+  summaryValue: { 
+    fontSize: 32, 
+    fontWeight: "700", 
+    color: "#111827",
+    letterSpacing: -0.5,
+  },
+  chartCard: {
+    backgroundColor: "#FFFFFF",
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  section: {
+    marginTop: 4,
+  },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginTop: 12,
-    marginBottom: 6,
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 12,
   },
   livePill: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
     backgroundColor: "#D1FAE5",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
   },
   liveDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#22C55E",
-    marginRight: 8,
+    backgroundColor: "#10B981",
+    marginRight: 6,
   },
-  liveTitle: { fontSize: 12, color: "#065F46", fontWeight: "700" },
-  liveTimer: { fontSize: 12, color: "#065F46", fontWeight: "700" },
+  liveTitle: { 
+    fontSize: 13, 
+    color: "#065F46", 
+    fontWeight: "600" 
+  },
+  liveTimer: { 
+    fontSize: 13, 
+    color: "#065F46", 
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+});
+
+const chartStyles = StyleSheet.create({
+  container: {
+    marginTop: 8,
+    alignItems: "center",
+  },
+  chartWrapper: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    width: "100%",
+    paddingTop: 8,
+    paddingBottom: 20,
+  },
+  barContainer: {
+    alignItems: "center", // ← 이 부분이 중요!
+    flex: 1,
+    marginHorizontal: 1.5,
+    justifyContent: "flex-end",
+  },
+  bar: {
+    width: 12,
+    borderRadius: 6,
+    minHeight: 4,
+    marginBottom: 4,
+  },
+  barLabel: {
+    fontSize: 10,
+    marginTop: 4,
+    textAlign: "center", // ← 추가
+    lineHeight: 14,      // ← 추가 (숫자 높이 맞춤, 필요시 조정)
+    width: 18,           // ← 추가 (숫자 폭 고정, 필요시 조정)
+  },
+  weekBarContainer: {
+    alignItems: "center",
+    flex: 1,
+    marginHorizontal: 2,
+    justifyContent: "flex-end",
+  },
+  weekBar: {
+    width: 20,
+    borderRadius: 10,
+    minHeight: 4,
+    marginBottom: 6,
+  },
+  weekBarLabel: {
+    fontSize: 12,
+    marginTop: 6,
+    fontWeight: "500",
+  },
 });
 
 const stayStyles = StyleSheet.create({
   wrap: {
-    marginTop: 8,
-    padding: 10,
-    borderRadius: 14,
+    marginTop: 4,
+    padding: 16,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#E5E7EB",
     backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   card: {
     borderWidth: 1,
     borderColor: "#E5E7EB",
     backgroundColor: "#F9FAFB",
     borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
-  row: { flexDirection: "row", alignItems: "center" },
+  row: { 
+    flexDirection: "row", 
+    alignItems: "center" 
+  },
   dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 8,
-    backgroundColor: "#10B981",
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 10,
+    backgroundColor: "#0D4093",
   },
   mainTime: {
     fontSize: 16,
@@ -1157,34 +1312,48 @@ const stayStyles = StyleSheet.create({
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
-  arrow: { color: "#6B7280" },
+  arrow: { 
+    color: "#9CA3AF",
+    marginHorizontal: 4,
+  },
   sub: {
-    marginTop: 4,
-    fontSize: 12,
+    marginTop: 6,
+    fontSize: 13,
     color: "#6B7280",
     fontVariant: ["tabular-nums"],
+    fontWeight: "500",
+  },
+  emptyContainer: {
+    padding: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyText: {
+    color: "#9CA3AF",
+    fontSize: 14,
+    fontWeight: "500",
   },
 });
 
 const pagerStyles = StyleSheet.create({
   container: {
-    marginTop: 6,
+    marginTop: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8 as any,
+    gap: 8,
   },
   pages: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6 as any,
-    marginHorizontal: 6,
+    gap: 6,
+    marginHorizontal: 8,
   },
   pageBtn: {
-    minWidth: 28,
-    height: 28,
-    paddingHorizontal: 8,
-    borderRadius: 14,
+    minWidth: 32,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#E5E7EB",
     alignItems: "center",
@@ -1192,21 +1361,22 @@ const pagerStyles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   pageBtnActive: {
-    backgroundColor: "#111827",
-    borderColor: "#111827",
+    backgroundColor: "#0D4093",
+    borderColor: "#0D4093",
   },
   pageLabel: {
-    fontSize: 12,
-    color: "#374151",
+    fontSize: 13,
+    color: "#6B7280",
+    fontWeight: "500",
   },
   pageLabelActive: {
     color: "#FFFFFF",
     fontWeight: "700",
   },
   navBtn: {
-    minWidth: 28,
-    height: 28,
-    borderRadius: 14,
+    minWidth: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#E5E7EB",
     alignItems: "center",
@@ -1214,11 +1384,13 @@ const pagerStyles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   navBtnDisabled: {
-    opacity: 0.4,
+    opacity: 0.3,
+    backgroundColor: "#F9FAFB",
   },
   navLabel: {
-    fontSize: 12,
-    color: "#374151",
+    fontSize: 14,
+    color: "#6B7280",
+    fontWeight: "600",
   },
 });
 
@@ -1226,47 +1398,63 @@ const monthStyles = StyleSheet.create({
   weekHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingHorizontal: 2,
-    marginBottom: 6,
+    paddingHorizontal: 4,
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
   },
   weekHeadTxt: {
     width: `${100 / 7}%`,
     textAlign: "center",
     fontSize: 12,
     color: "#6B7280",
+    fontWeight: "600",
   },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 6,
+    marginBottom: 8,
   },
   cell: {
     width: `${100 / 7}%`,
-    paddingHorizontal: 2,
+    paddingHorizontal: 3,
   },
   box: {
-    aspectRatio: 1, // 정사각형
-    borderRadius: 10,
-    alignItems: "flex-start",
-    justifyContent: "flex-start",
-    padding: 6,
-    backgroundColor: "#E5E7EB",
+    aspectRatio: 1,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 4,
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
   dayNum: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 11,
+    fontWeight: "600",
   },
   legendRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 8,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
   },
-  legendLabel: { fontSize: 10, color: "#6B7280", marginHorizontal: 6 },
+  legendLabel: { 
+    fontSize: 11, 
+    color: "#6B7280", 
+    marginHorizontal: 8,
+    fontWeight: "500",
+  },
   legendScale: {
     flex: 1,
     flexDirection: "row",
-    height: 10,
+    height: 12,
     borderRadius: 6,
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
 });
