@@ -186,16 +186,31 @@ export default function GroupZoneMap() {
     latDelta = 0.01,
     lngDelta = 0.01
   ) => {
-    const next: Region = {
+    // region 상태도 갱신
+    setRegion({
       latitude: lat,
       longitude: lng,
       latitudeDelta: latDelta,
       longitudeDelta: lngDelta,
-    };
-    setRegion(next);
-    mapRef.current?.animateToRegion(next, 350);
+    });
+    // 지도 카메라 부드럽게 이동
+    mapRef.current?.animateCamera(
+      {
+        center: { latitude: lat, longitude: lng },
+        zoom: 17,
+      },
+      { duration: 1200 }
+    );
   };
 
+  // 그룹 카드 클릭 시
+  const onGroupPress = (group: GroupItem) => {
+    if (group.latitude && group.longitude) {
+      animateTo(group.latitude, group.longitude, region.latitudeDelta, region.longitudeDelta);
+    }
+  };
+
+  // 현재 위치 버튼
   const getCurrentLocation = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -203,21 +218,13 @@ export default function GroupZoneMap() {
         Alert.alert("권한 필요", "위치 권한을 허용해주세요.");
         return;
       }
-      
       const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
-      
-      animateTo(loc.coords.latitude, loc.coords.longitude);
+      animateTo(loc.coords.latitude, loc.coords.longitude, region.latitudeDelta, region.longitudeDelta);
     } catch (e) {
       console.error(e);
       Alert.alert("오류", "현재 위치를 가져올 수 없습니다.");
-    }
-  };
-
-  const onGroupPress = (group: GroupItem) => {
-    if (group.latitude && group.longitude) {
-      animateTo(group.latitude, group.longitude, region.latitudeDelta, region.longitudeDelta);
     }
   };
 
