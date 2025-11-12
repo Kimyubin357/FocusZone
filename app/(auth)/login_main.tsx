@@ -1,13 +1,11 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useContext, useEffect, useState } from 'react';
-import { Alert, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Alert, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
-import CustomButton from '../../components/Button';
-
 // Firebase 및 Auth 관련
 import {
   GoogleAuthProvider,
-  OAuthProvider,
   signInWithCredential,
   User
 } from "firebase/auth";
@@ -18,9 +16,6 @@ import { AuthContext } from "../../src/services/auth/authContext";
 // Google 로그인 (expo-auth-session)
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
-
-// Apple 로그인 (expo-apple-authentication)
-import * as AppleAuthentication from 'expo-apple-authentication';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -106,102 +101,62 @@ export default function LoginMain() {
     googlePromptAsync();
   };
 
-  // --- 2. Apple 로그인 ---
-  const handleAppleLogin = async () => {
-    if (loading) return;
-    setLoading(true);
-    try {
-      const appleCredential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-      });
-
-      const { identityToken } = appleCredential;
-      if (!identityToken) {
-        throw new Error("Apple identityToken을 받지 못했습니다.");
-      }
-
-      const provider = new OAuthProvider('apple.com');
-      const credential = provider.credential({
-        idToken: identityToken,
-      });
-
-      const userCredential = await signInWithCredential(auth, credential);
-      await checkUserDocAndNavigate(userCredential.user);
-
-    } catch (e: any) {
-      if (e.code === 'ERR_CANCELED') {
-        console.log("Apple login canceled");
-      } else {
-        console.error("Apple Sign-In Error:", e);
-        Alert.alert("로그인 실패", "Apple 로그인 중 오류가 발생했습니다.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // --- 3. Naver/Kakao (추후 구현) ---
-  const handleNaverLogin = () => {
-    if (loading) return;
-    Alert.alert("준비 중", "네이버 로그인은 현재 준비 중입니다.");
-    // console.log('Naver login')
-  };
-
-  const handleKakaoLogin = () => {
-    if (loading) return;
-    Alert.alert("준비 중", "카카오 로그인은 현재 준비 중입니다.");
-    // console.log('Kakao login')
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <Text style={styles.title}>
-        집중장소 {'\n'}
-        시작해볼까요?
-      </Text>
 
-      <View style={styles.buttonContainer}>
-        <CustomButton
-          title="이메일로 계속하기"
-          backgroundColor="#2196F3"
-          onPress={() => router.push('/email_signup')}
-          disabled={loading}
-        />
-        <Text style={styles.orText}>또는</Text>
-        <CustomButton
-          title="네이버로 계속하기"
-          backgroundColor="#03C75A"
-          onPress={handleNaverLogin} // ✅ 핸들러 연결
-          disabled={loading}
-        />
-        <CustomButton
-          title="카카오로 계속하기"
-          backgroundColor="#FEE500"
-          textColor="#000000"
-          onPress={handleKakaoLogin} // ✅ 핸들러 연결
-          disabled={loading}
-        />
-        <CustomButton
-          title="Apple로 계속하기"
-          backgroundColor="#000000"
-          onPress={handleAppleLogin} // ✅ 핸들러 연결
-          disabled={loading}
-        />
-        <CustomButton
-          title="Google로 계속하기"
-          backgroundColor="#F2F2F2"
-          textColor="#000000"
-          onPress={handleGoogleLogin} // ✅ 핸들러 연결
-          disabled={loading}
-        />
+      {/* 상단 타이틀 영역 */}
+      <View style={styles.titleContainer}>
+        <Text style={styles.title}>
+          집중장소 {'\n'}
+          시작해볼까요?
+        </Text>
       </View>
-      <Text style={styles.termsText}>
-        계속하면, 개인정보 보호정책 및 이용약관에 동의하게 됩니다
-      </Text>
+
+      {/* 하단 버튼 및 약관 영역 */}
+      <View style={styles.bottomContainer}>
+        <View style={styles.buttonContainer}>
+          {/* 이메일로 계속하기 버튼 */}
+          <TouchableOpacity
+            style={[styles.button, styles.emailButton]}
+            onPress={() => router.push('/email_signup')}
+            disabled={loading}
+          >
+            <Ionicons
+              name="mail-outline"
+              size={22}
+              color="white"
+              style={styles.icon}
+            />
+            <Text style={[styles.buttonText, styles.emailButtonText]}>
+              이메일로 계속하기
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={styles.orText}>또는</Text>
+
+          {/* Google로 계속하기 버튼 */}
+          <TouchableOpacity
+            style={[styles.button, styles.googleButton]}
+            onPress={handleGoogleLogin}
+            disabled={loading}
+          >
+            <Ionicons
+              name="logo-google"
+              size={22}
+              color="black"
+              style={styles.icon}
+            />
+            <Text style={[styles.buttonText, styles.googleButtonText]}>
+              Google로 계속하기
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.termsText}>
+          계속하면, 개인정보 보호정책 및 이용약관에 동의하게 됩니다
+        </Text>
+      </View>
     </SafeAreaView>
   );
 }; // ✅ 컴포넌트 종료
@@ -210,31 +165,77 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
     paddingHorizontal: 20,
+    // ✅ 화면을 상단/하단으로 나누기 위해 space-between 사용
+    justifyContent: 'space-between',
+    paddingVertical: 20, // 위아래 여백 추가
+  },
+  titleContainer: {
+    flex: 1,
+    justifyContent: 'center', // 제목을 중앙(세로)으로
+    alignItems: 'center', // 제목을 중앙(가로)으로
+    paddingTop: 40, // 상단 여백 추가
   },
   title: {
-    fontSize: 40,
+    fontSize: 36, // 폰트 크기 조절
     fontWeight: 'bold',
-    marginBottom: 40,
     textAlign: 'center',
+    lineHeight: 50, // 줄 간격 조절
+  },
+  bottomContainer: {
+    paddingBottom: 20, // 하단 여백
   },
   buttonContainer: {
     width: '100%',
     maxWidth: 350,
+    alignSelf: 'center', // 가로 중앙 정렬
   },
   orText: {
     textAlign: 'center',
     marginVertical: 15,
-    fontSize: 16,
+    fontSize: 14,
     color: '#888',
+    fontWeight: '500',
   },
   termsText: {
-    marginTop: 20,
+    marginTop: 25, // 버튼 영역과의 간격
     fontSize: 12,
     color: '#888',
     textAlign: 'center',
+  },
+  // --- ✅ 새로운 버튼 스타일 ---
+  button: {
+    flexDirection: 'row', // 아이콘과 텍스트를 가로로 배열
+    alignItems: 'center',
+    justifyContent: 'center', // 내용을 중앙 정렬
+    height: 50,
+    borderRadius: 25, // 둥근 모서리
+    paddingHorizontal: 20,
+    width: '100%',
+  },
+  icon: {
+    marginRight: 12, // 아이콘과 텍스트 사이 간격
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: '600', // 텍스트 굵기
+  },
+  // 이메일 버튼
+  emailButton: {
+    backgroundColor: '#2196F3',
+  },
+  emailButtonText: {
+    color: '#FFFFFF',
+  },
+  // 구글 버튼
+  googleButton: {
+    backgroundColor: '#F2F2F2',
+    // 얇은 테두리 추가
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  googleButtonText: {
+    color: '#000000',
   },
 });
 
