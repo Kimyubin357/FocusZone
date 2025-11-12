@@ -6,7 +6,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import type { Granularity } from "../../../../src/features/stats/types";
 import { useStats } from "../../../../src/features/stats/useStats";
@@ -15,14 +23,12 @@ import PeriodToggle from "../../../../src/features/ui/PeriodToggle";
 import { toYMD } from "../../../../src/services/lib/time";
 
 /* ───────── 공통 유틸 ───────── */
-function fmtHms(ms: number) {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(
-    s
-  ).padStart(2, "0")}`;
+/** 4h 55m 처럼 ‘분’까지만 표기 */
+function fmtHmShort(ms: number) {
+  const totalMin = Math.max(0, Math.floor(ms / 60000));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 function sameYmd(a: Date, b: Date) {
   return (
@@ -857,7 +863,7 @@ export default function Stats() {
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [anchor, setAnchor] = useState(new Date());
   const unifiedTotalMs = useMergedTotalMsForPeriod(userId, anchor, granularity);
-  const formattedTotal = fmtHms(unifiedTotalMs);
+  const formattedTotal = fmtHmShort(unifiedTotalMs);
 
   const stats = useStats({
     userId,
@@ -932,7 +938,7 @@ export default function Stats() {
   // [NAV] 오늘/이번주/이번달 점프 버튼
   const jumpLabel =
     granularity === "day"
-      ? "오늘로 가기"
+      ? "오늘"
       : granularity === "week"
       ? "이번 주로"
       : "이번 달로";
@@ -944,8 +950,10 @@ export default function Stats() {
   const liveTodayMsForMonth = sameYm(anchor, new Date()) ? liveTodayMs : 0; // 현재 달이면 오늘칸 실시간 가산
 
   const dayRows = useDaySessionsLive(userId, anchor, granularity);
+  const topPad =
+    (Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0) + 8;
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: topPad }]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <PeriodToggle value={granularity} onChange={setGranularity} />
@@ -998,7 +1006,7 @@ export default function Stats() {
             {/* Day에서만 '진입 & 이탈 시간' */}
             {granularity === "day" && (
               <View style={{ marginTop: 12 }}>
-                <Text style={styles.sectionTitle}>진입 & 이탈 시간</Text>
+                <Text style={styles.sectionTitle}>기록</Text>
                 <PaginatedStayList rows={dayRows} />
               </View>
             )}
@@ -1055,14 +1063,14 @@ function LiveNowBadge({
       <View style={styles.liveDot} />
       <Text style={styles.liveTitle}>진행 중</Text>
       <Text style={{ width: 6 }} />
-      <Text style={styles.liveTimer}>{fmtHms(elapsed)}</Text>
+      <Text style={styles.liveTimer}>{fmtHmShort(elapsed)}</Text>
     </View>
   );
 }
 
 /* ───────── Styles ───────── */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "white", marginTop: 15 },
+  container: { flex: 1, backgroundColor: "white" },
   scrollContent: { padding: 16, paddingBottom: 40 },
   header: { marginBottom: 8 },
   center: {

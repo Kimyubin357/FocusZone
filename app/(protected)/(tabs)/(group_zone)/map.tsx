@@ -231,12 +231,51 @@ export default function KakaoMapScreen() {
 
   useEffect(() => {
     (async () => {
-      const road = await getRoadAddressFromCoords(
-        selectedLocation.latitude,
-        selectedLocation.longitude
-      );
-      if (road) {
-        setAddress(road);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === "granted") {
+        // 수정 모드일 때는 params의 좌표를 우선 사용
+        if (params.editMode === "true" && params.latitude && params.longitude) {
+          const latitude = Number(params.latitude);
+          const longitude = Number(params.longitude);
+          setSelectedLocation({ latitude, longitude });
+          setRegion((prev) => ({
+            ...prev,
+            latitude,
+            longitude,
+          }));
+          mapRef.current?.animateCamera(
+            {
+              center: { latitude, longitude },
+              zoom: 17,
+            },
+            { duration: 1200 }
+          );
+          const road = await getRoadAddressFromCoords(latitude, longitude);
+          if (road) setAddress(road);
+          return;
+        }
+        // 신규 등록일 때만 내 위치로 이동
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        const { latitude, longitude } = loc.coords;
+        setSelectedLocation({ latitude, longitude });
+        setRegion((prev) => ({
+          ...prev,
+          latitude,
+          longitude,
+        }));
+        mapRef.current?.animateCamera(
+          {
+            center: { latitude, longitude },
+            zoom: 17,
+          },
+          { duration: 1200 }
+        );
+        const road = await getRoadAddressFromCoords(latitude, longitude);
+        if (road) setAddress(road);
+      } else {
+        Alert.alert("위치 권한 필요", "현재 위치를 표시하려면 위치 권한이 필요합니다.");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -251,6 +290,13 @@ export default function KakaoMapScreen() {
     };
     setRegion(next);
     mapRef.current?.animateToRegion(next, 250);
+    mapRef.current?.animateCamera(
+    {
+      center: { latitude: lat, longitude: lng },
+      zoom: 17,
+    },
+    { duration: 1200 }
+  );
   };
 
   const handleSliderChange = (value: number) => setRadius(value);
