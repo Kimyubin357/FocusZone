@@ -34,7 +34,7 @@
       },
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundImage": "./assets/images/adaptive-background.png"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.focuszone",
@@ -68,7 +68,7 @@
         "expo-notifications",
         {
           "icon": "./assets/images/notification-icon.png",
-          "color": "#4A90E2",
+          "color": "#0D4093",
           "sounds": [],
           "mode": "production"
         }
@@ -78,9 +78,8 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "resizeMode": "cover",
+          "backgroundColor": "#0D4093"
         }
       ],
       "expo-web-browser"
